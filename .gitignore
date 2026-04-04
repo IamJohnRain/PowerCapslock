@@ -1,0 +1,27 @@
+# Build output
+build/
+*.exe
+*.o
+*.obj
+
+# IDE files
+.vscode/
+.idea/
+*.suo
+*.user
+*.sln
+*.vcxproj
+
+# Temporary files
+*.log
+*.tmp
+*.bak
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# CodeArts
+.codeartsdoer/
+.arts/
