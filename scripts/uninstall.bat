@@ -2,7 +2,7 @@
 setlocal
 
 echo ========================================
-echo JohnHotKeyMap Uninstallation Script
+echo PowerCapslock Uninstallation Script
 echo ========================================
 echo.
 
@@ -17,23 +17,23 @@ if %errorLevel% neq 0 (
 
 :: 停止运行中的程序
 echo Stopping running instance...
-taskkill /F /IM hotkeymap.exe >nul 2>&1
+taskkill /F /IM powercapslock.exe >nul 2>&1
 
 :: 移除开机启动
 echo Removing from startup...
 reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" ^
-    /v "JohnHotKeyMap" ^
+    /v "PowerCapslock" ^
     /f >nul 2>&1
 
 :: 删除程序文件
-set "INSTALL_DIR=%ProgramFiles%\JohnHotKeyMap"
+set "INSTALL_DIR=%ProgramFiles%\PowerCapslock"
 if exist "%INSTALL_DIR%" (
     echo Removing program files...
     rmdir /S /Q "%INSTALL_DIR%" 2>nul
 )
 
 :: 删除开始菜单快捷方式
-set "SHORTCUT_DIR=%APPDATA%\Microsoft\Windows\Start Menu\Programs\JohnHotKeyMap"
+set "SHORTCUT_DIR=%APPDATA%\Microsoft\Windows\Start Menu\Programs\PowerCapslock"
 if exist "%SHORTCUT_DIR%" (
     echo Removing start menu shortcut...
     rmdir /S /Q "%SHORTCUT_DIR%" 2>nul
@@ -46,7 +46,7 @@ echo Uninstallation completed successfully!
 echo ========================================
 echo.
 echo Configuration files are preserved at:
-echo   %APPDATA%\JohnHotKeyMap
+echo   %APPDATA%\PowerCapslock
 echo.
 echo To completely remove, you can manually delete this directory.
 echo.

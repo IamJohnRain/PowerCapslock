@@ -2,7 +2,7 @@
 setlocal
 
 echo ========================================
-echo JohnHotKeyMap Build Script
+echo PowerCapslock Build Script
 echo ========================================
 echo.
 
@@ -69,7 +69,7 @@ if %errorLevel% neq 0 (
 echo.
 echo ========================================
 echo Build completed successfully!
-echo Output: build\hotkeymap.exe
+echo Output: build\powercapslock.exe
 echo ========================================
 echo.
 

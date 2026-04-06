@@ -1,4 +1,4 @@
-# JohnHotKeyMap 技术设计方案
+# PowerCapslock 技术设计方案
 
 ## 项目概述
 
@@ -193,7 +193,7 @@ void LogMessage(LogLevel level, const char* format, ...);
 void LoggerSetLevel(LogLevel level);
 ```
 
-**日志文件位置**: `%APPDATA%\JohnHotKeyMap\logs\hotkeymap.log`
+**日志文件位置**: `%APPDATA%\PowerCapslock\logs\powercapslock.log`
 
 #### 5. 配置模块 (config.c/h)
 
@@ -220,7 +220,7 @@ void ConfigLoadDefaults(void);
 const Config* ConfigGet(void);
 ```
 
-**配置文件位置**: `%APPDATA%\JohnHotKeyMap\keymap.json`
+**配置文件位置**: `%APPDATA%\PowerCapslock\config.json`
 
 #### 6. 键盘布局模块 (keyboard_layout.c/h)
 
@@ -466,7 +466,7 @@ TrayWndProc()
 ## 文件结构
 
 ```
-JohnHotKeyMap/
+PowerCapslock/
 ├── src/
 │   ├── main.c              # 程序入口
 │   ├── hook.c/.h           # 键盘钩子
@@ -480,7 +480,7 @@ JohnHotKeyMap/
 │   ├── icon_disabled.ico   # 托盘图标（禁用状态）
 │   └── resource.rc         # Windows 资源文件
 ├── config/
-│   └── keymap.json         # 默认配置文件
+│   └── config.json         # 默认配置文件
 ├── build/
 │   └── (构建输出)
 ├── CMakeLists.txt          # CMake 配置
@@ -496,7 +496,7 @@ JohnHotKeyMap/
 
 ```cmake
 cmake_minimum_required(VERSION 3.10)
-project(JohnHotKeyMap C)
+project(PowerCapslock C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -514,10 +514,10 @@ set(SOURCES
 )
 
 # 可执行文件
-add_executable(hotkeymap WIN32 ${SOURCES})
+add_executable(powercapslock WIN32 ${SOURCES})
 
 # 链接库
-target_link_libraries(hotkeymap
+target_link_libraries(powercapslock
     user32
     kernel32
     shell32
@@ -526,10 +526,10 @@ target_link_libraries(hotkeymap
 )
 
 # 包含目录
-target_include_directories(hotkeymap PRIVATE src)
+target_include_directories(powercapslock PRIVATE src)
 
 # 设置 Windows 子系统
-set_target_properties(hotkeymap PROPERTIES
+set_target_properties(powercapslock PROPERTIES
     WIN32_EXECUTABLE TRUE
 )
 ```
@@ -565,37 +565,37 @@ if %errorLevel% neq 0 (
 )
 
 :: 设置安装目录
-set "INSTALL_DIR=C:\Program Files\JohnHotKeyMap"
-set "CONFIG_DIR=%APPDATA%\JohnHotKeyMap"
+set "INSTALL_DIR=C:\Program Files\PowerCapslock"
+set "CONFIG_DIR=%APPDATA%\PowerCapslock"
 
 :: 创建目录
 mkdir "%INSTALL_DIR%" 2>nul
 mkdir "%CONFIG_DIR%\logs" 2>nul
 
 :: 复制程序文件
-copy "build\hotkeymap.exe" "%INSTALL_DIR%\"
+copy "build\powercapslock.exe" "%INSTALL_DIR%\"
 copy "resources\*.ico" "%INSTALL_DIR%\" 2>nul
 
 :: 复制默认配置（如果不存在）
-if not exist "%CONFIG_DIR%\keymap.json" (
-    copy "config\keymap.json" "%CONFIG_DIR%\"
+if not exist "%CONFIG_DIR%\config.json" (
+    copy "config\config.json" "%CONFIG_DIR%\"
 )
 
 :: 添加到开机启动
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" ^
-    /v "JohnHotKeyMap" ^
+    /v "PowerCapslock" ^
     /t REG_SZ ^
-    /d "\"%INSTALL_DIR%\hotkeymap.exe\"" ^
+    /d "\"%INSTALL_DIR%\powercapslock.exe\"" ^
     /f
 
 :: 创建开始菜单快捷方式
-set "SHORTCUT_DIR=%APPDATA%\Microsoft\Windows\Start Menu\Programs\JohnHotKeyMap"
+set "SHORTCUT_DIR=%APPDATA%\Microsoft\Windows\Start Menu\Programs\PowerCapslock"
 mkdir "%SHORTCUT_DIR%" 2>nul
 
 powershell -Command "$
 WshShell = New-Object -ComObject WScript.Shell; $
-Shortcut = $WshShell.CreateShortcut('%SHORTCUT_DIR%\JohnHotKeyMap.lnk'); $
-Shortcut.TargetPath = '%INSTALL_DIR%\hotkeymap.exe'; $
+Shortcut = $WshShell.CreateShortcut('%SHORTCUT_DIR%\PowerCapslock.lnk'); $
+Shortcut.TargetPath = '%INSTALL_DIR%\powercapslock.exe'; $
 Shortcut.WorkingDirectory = '%CONFIG_DIR%'; $
 Shortcut.Save()"
 
@@ -620,23 +620,23 @@ if %errorLevel% neq 0 (
 )
 
 :: 停止运行中的程序
-taskkill /F /IM hotkeymap.exe 2>nul
+taskkill /F /IM powercapslock.exe 2>nul
 
 :: 移除开机启动
 reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" ^
-    /v "JohnHotKeyMap" ^
+    /v "PowerCapslock" ^
     /f 2>nul
 
 :: 删除程序文件
-set "INSTALL_DIR=C:\Program Files\JohnHotKeyMap"
+set "INSTALL_DIR=C:\Program Files\PowerCapslock"
 rmdir /S /Q "%INSTALL_DIR%" 2>nul
 
 :: 删除开始菜单快捷方式
-set "SHORTCUT_DIR=%APPDATA%\Microsoft\Windows\Start Menu\Programs\JohnHotKeyMap"
+set "SHORTCUT_DIR=%APPDATA%\Microsoft\Windows\Start Menu\Programs\PowerCapslock"
 rmdir /S /Q "%SHORTCUT_DIR%" 2>nul
 
 echo 卸载完成！
-echo 配置文件保留在: %APPDATA%\JohnHotKeyMap
+echo 配置文件保留在: %APPDATA%\PowerCapslock
 pause
 ```
 

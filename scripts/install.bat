@@ -2,7 +2,7 @@
 setlocal
 
 echo ========================================
-echo JohnHotKeyMap Installation Script
+echo PowerCapslock Installation Script
 echo ========================================
 echo.
 
@@ -16,12 +16,12 @@ if %errorLevel% neq 0 (
 )
 
 :: 设置安装目录
-set "INSTALL_DIR=%ProgramFiles%\JohnHotKeyMap"
-set "CONFIG_DIR=%APPDATA%\JohnHotKeyMap"
+set "INSTALL_DIR=%ProgramFiles%\PowerCapslock"
+set "CONFIG_DIR=%APPDATA%\PowerCapslock"
 
 :: 检查可执行文件
-if not exist "build\hotkeymap.exe" (
-    echo ERROR: hotkeymap.exe not found!
+if not exist "build\powercapslock.exe" (
+    echo ERROR: powercapslock.exe not found!
     echo Please run build.bat first.
     pause
     exit /b 1
@@ -35,9 +35,9 @@ mkdir "%CONFIG_DIR%\logs" 2>nul
 
 :: 复制程序文件
 echo Copying program files...
-copy /Y "build\hotkeymap.exe" "%INSTALL_DIR%\" >nul
+copy /Y "build\powercapslock.exe" "%INSTALL_DIR%\" >nul
 if %errorLevel% neq 0 (
-    echo ERROR: Failed to copy hotkeymap.exe
+    echo ERROR: Failed to copy powercapslock.exe
     pause
     exit /b 1
 )
@@ -51,25 +51,25 @@ if exist "resources\icon_disabled.ico" (
 )
 
 :: 复制默认配置（如果不存在）
-if not exist "%CONFIG_DIR%\keymap.json" (
+if not exist "%CONFIG_DIR%\config.json" (
     echo Copying default configuration...
-    copy /Y "config\keymap.json" "%CONFIG_DIR%\" >nul
+    copy /Y "config\config.json" "%CONFIG_DIR%\" >nul
 )
 
 :: 添加到开机启动
 echo Adding to startup...
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" ^
-    /v "JohnHotKeyMap" ^
+    /v "PowerCapslock" ^
     /t REG_SZ ^
-    /d "\"%INSTALL_DIR%\hotkeymap.exe\"" ^
+    /d "\"%INSTALL_DIR%\powercapslock.exe\"" ^
     /f >nul 2>&1
 
 :: 创建开始菜单快捷方式
 echo Creating start menu shortcut...
-set "SHORTCUT_DIR=%APPDATA%\Microsoft\Windows\Start Menu\Programs\JohnHotKeyMap"
+set "SHORTCUT_DIR=%APPDATA%\Microsoft\Windows\Start Menu\Programs\PowerCapslock"
 mkdir "%SHORTCUT_DIR%" 2>nul
 
-powershell -Command "$WshShell = New-Object -ComObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut('%SHORTCUT_DIR%\JohnHotKeyMap.lnk'); $Shortcut.TargetPath = '%INSTALL_DIR%\hotkeymap.exe'; $Shortcut.WorkingDirectory = '%CONFIG_DIR%'; $Shortcut.Save()"
+powershell -Command "$WshShell = New-Object -ComObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut('%SHORTCUT_DIR%\PowerCapslock.lnk'); $Shortcut.TargetPath = '%INSTALL_DIR%\powercapslock.exe'; $Shortcut.WorkingDirectory = '%CONFIG_DIR%'; $Shortcut.Save()"
 
 :: 成功
 echo.
@@ -85,7 +85,7 @@ echo The program will start automatically with Windows.
 echo.
 echo You can now:
 echo   1. Launch the program from the Start Menu
-echo   2. Or run: "%INSTALL_DIR%\hotkeymap.exe"
+echo   2. Or run: "%INSTALL_DIR%\powercapslock.exe"
 echo.
 
 pause

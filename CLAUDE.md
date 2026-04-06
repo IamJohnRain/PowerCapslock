@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-JohnHotKeyMap is a Windows keyboard hotkey mapping tool that transforms CapsLock into a modifier key for Vim-style navigation and function key mappings. It uses Windows Low-level Keyboard Hook (WH_KEYBOARD_LL) to intercept and remap keys.
+PowerCapslock is a Windows keyboard hotkey mapping tool that transforms CapsLock into a modifier key for Vim-style navigation and function key mappings. It uses Windows Low-level Keyboard Hook (WH_KEYBOARD_LL) to intercept and remap keys.
 
 ## Build Commands
 
@@ -40,8 +40,8 @@ scripts\uninstall.bat
 - **hook.c/h**: Low-level keyboard hook installation and callback. Intercepts CapsLock and mapped keys, uses `SendInput()` to simulate target keys.
 - **keymap.c/h**: Key mapping table management. Uses Scan Codes (not VK codes) for multi-language keyboard support.
 - **tray.c/h**: System tray icon and menu for enable/disable control.
-- **config.c/h**: JSON configuration file loading/parsing. Config location: `%APPDATA%\JohnHotKeyMap\keymap.json`.
-- **logger.c/h**: File/console logging with DEBUG/INFO/WARN/ERROR levels. Log location: `%APPDATA%\JohnHotKeyMap\logs\hotkeymap.log`.
+- **config.c/h**: JSON configuration file loading/parsing. Config location: `%APPDATA%\PowerCapslock\config.json`.
+- **logger.c/h**: File/console logging with DEBUG/INFO/WARN/ERROR levels. Log location: `%APPDATA%\PowerCapslock\logs\powercapslock.log`.
 - **keyboard_layout.c/h**: Multi-language keyboard layout support via `MapVirtualKeyEx()`.
 
 ### Key Technical Details
@@ -61,7 +61,7 @@ scripts\uninstall.bat
 
 ## Configuration
 
-JSON config at `%APPDATA%\JohnHotKeyMap\keymap.json`. See [config/keymap.json](config/keymap.json) for default structure.
+JSON config at `%APPDATA%\PowerCapslock\config.json`. See [config/config.json](config/config.json) for default structure.
 
 ## Important Files
 

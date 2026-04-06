@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(JohnHotKeyMap C)
+project(PowerCapslock C)
 
 # 设置C标准
 set(CMAKE_C_STANDARD 11)
@@ -28,10 +28,10 @@ set(HEADERS
 )
 
 # 可执行文件
-add_executable(hotkeymap WIN32 ${SOURCES} ${HEADERS})
+add_executable(powercapslock WIN32 ${SOURCES} ${HEADERS})
 
 # 链接库
-target_link_libraries(hotkeymap
+target_link_libraries(powercapslock
     user32
     kernel32
     shell32
@@ -41,16 +41,16 @@ target_link_libraries(hotkeymap
 )
 
 # 包含目录
-target_include_directories(hotkeymap PRIVATE src)
+target_include_directories(powercapslock PRIVATE src)
 
 # 设置Windows子系统
-set_target_properties(hotkeymap PROPERTIES
+set_target_properties(powercapslock PROPERTIES
     WIN32_EXECUTABLE TRUE
-    OUTPUT_NAME "hotkeymap"
+    OUTPUT_NAME "powercapslock"
 )
 
 # 定义资源ID
-target_compile_definitions(hotkeymap PRIVATE
+target_compile_definitions(powercapslock PRIVATE
     IDI_ICON_NORMAL=101
     IDI_ICON_DISABLED=102
 )
@@ -62,34 +62,34 @@ endif()
 
 # 编译选项
 if(MSVC)
-    target_compile_options(hotkeymap PRIVATE
+    target_compile_options(powercapslock PRIVATE
         /W3
         /utf-8
     )
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
-        target_compile_options(hotkeymap PRIVATE
+        target_compile_options(powercapslock PRIVATE
             /O2
             /GL
         )
-        set_target_properties(hotkeymap PROPERTIES
+        set_target_properties(powercapslock PROPERTIES
             LINK_FLAGS "/LTCG"
         )
     endif()
 else()
-    target_compile_options(hotkeymap PRIVATE
+    target_compile_options(powercapslock PRIVATE
         -Wall
         -Wextra
     )
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
-        target_compile_options(hotkeymap PRIVATE
+        target_compile_options(powercapslock PRIVATE
             -O2
         )
     endif()
 endif()
 
 # 安装规则
-install(TARGETS hotkeymap DESTINATION bin)
-install(FILES config/keymap.json DESTINATION config)
+install(TARGETS powercapslock DESTINATION bin)
+install(FILES config/config.json DESTINATION config)
 install(FILES resources/icon.ico resources/icon_disabled.ico DESTINATION resources)
 
 # 打印配置信息

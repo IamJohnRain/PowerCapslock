@@ -1,4 +1,5 @@
 #include "config.h"
+#include "keymap.h"
 #include "logger.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -6,6 +7,76 @@
 #include <shlobj.h>
 
 static Config g_config = {0};
+
+// 按键名称到扫描码的映射表
+typedef struct {
+    const char* name;
+    WORD scanCode;
+    UINT vkCode;
+} KeyNameEntry;
+
+static const KeyNameEntry keyNameTable[] = {
+    // 字母键 (基于美式键盘物理布局)
+    {"A", 0x1E, 0x41}, {"B", 0x30, 0x42}, {"C", 0x2E, 0x43}, {"D", 0x20, 0x44},
+    {"E", 0x12, 0x45}, {"F", 0x21, 0x46}, {"G", 0x22, 0x47}, {"H", 0x23, 0x48},
+    {"I", 0x17, 0x49}, {"J", 0x24, 0x4A}, {"K", 0x25, 0x4B}, {"L", 0x26, 0x4C},
+    {"M", 0x32, 0x4D}, {"N", 0x31, 0x4E}, {"O", 0x18, 0x4F}, {"P", 0x19, 0x50},
+    {"Q", 0x10, 0x51}, {"R", 0x13, 0x52}, {"S", 0x1F, 0x53}, {"T", 0x14, 0x54},
+    {"U", 0x16, 0x55}, {"V", 0x2F, 0x56}, {"W", 0x11, 0x57}, {"X", 0x2D, 0x58},
+    {"Y", 0x15, 0x59}, {"Z", 0x2C, 0x5A},
+
+    // 数字键
+    {"1", 0x02, 0x31}, {"2", 0x03, 0x32}, {"3", 0x04, 0x33}, {"4", 0x05, 0x34},
+    {"5", 0x06, 0x35}, {"6", 0x07, 0x36}, {"7", 0x08, 0x37}, {"8", 0x09, 0x38},
+    {"9", 0x0A, 0x39}, {"0", 0x0B, 0x30},
+
+    // 符号键
+    {"MINUS", 0x0C, 0xBD}, {"EQUAL", 0x0D, 0xBB},
+    {"LBRACKET", 0x1A, 0xDB}, {"RBRACKET", 0x1B, 0xDD},
+    {"BACKSLASH", 0x2B, 0xDC}, {"SEMICOLON", 0x27, 0xBA},
+    {"QUOTE", 0x28, 0xDE}, {"COMMA", 0x33, 0xBC},
+    {"PERIOD", 0x34, 0xBE}, {"SLASH", 0x35, 0xBF},
+    {"BACKQUOTE", 0x29, 0xC0},
+
+    // 功能键
+    {"F1", 0x3B, VK_F1}, {"F2", 0x3C, VK_F2}, {"F3", 0x3D, VK_F3}, {"F4", 0x3E, VK_F4},
+    {"F5", 0x3F, VK_F5}, {"F6", 0x40, VK_F6}, {"F7", 0x41, VK_F7}, {"F8", 0x42, VK_F8},
+    {"F9", 0x43, VK_F9}, {"F10", 0x44, VK_F10}, {"F11", 0x57, VK_F11}, {"F12", 0x58, VK_F12},
+
+    // 导航键
+    {"HOME", 0xE047, VK_HOME}, {"END", 0xE04F, VK_END},
+    {"PAGEUP", 0xE049, VK_PRIOR}, {"PAGEDOWN", 0xE051, VK_NEXT},
+    {"INSERT", 0xE052, VK_INSERT}, {"DELETE", 0xE053, VK_DELETE},
+    {"UP", 0xE048, VK_UP}, {"DOWN", 0xE050, VK_DOWN},
+    {"LEFT", 0xE04B, VK_LEFT}, {"RIGHT", 0xE04D, VK_RIGHT},
+
+    // 控制键
+    {"ESCAPE", 0x01, VK_ESCAPE}, {"TAB", 0x0F, VK_TAB},
+    {"CAPSLOCK", 0x3A, VK_CAPITAL}, {"SPACE", 0x39, VK_SPACE},
+    {"ENTER", 0x1C, VK_RETURN}, {"BACKSPACE", 0x0E, VK_BACK},
+
+    {NULL, 0, 0}  // 结束标记
+};
+
+// 根据名称查找扫描码
+static WORD NameToScanCode(const char* name) {
+    for (int i = 0; keyNameTable[i].name != NULL; i++) {
+        if (_stricmp(keyNameTable[i].name, name) == 0) {
+            return keyNameTable[i].scanCode;
+        }
+    }
+    return 0;
+}
+
+// 根据名称查找VK码
+static UINT NameToVkCode(const char* name) {
+    for (int i = 0; keyNameTable[i].name != NULL; i++) {
+        if (_stricmp(keyNameTable[i].name, name) == 0) {
+            return keyNameTable[i].vkCode;
+        }
+    }
+    return 0;
+}
 
 // 简单的JSON解析辅助函数
 static char* ReadFileContent(const char* path) {
@@ -40,6 +111,139 @@ static bool WriteFileContent(const char* path, const char* content) {
     fprintf(file, "%s", content);
     fclose(file);
     return true;
+}
+
+// 创建目录（支持多级目录）
+static bool CreateDirectoryRecursive(const char* path) {
+    char tmp[MAX_PATH];
+    char* p = NULL;
+    size_t len;
+
+    snprintf(tmp, sizeof(tmp), "%s", path);
+    len = strlen(tmp);
+
+    // 移除末尾的斜杠
+    if (tmp[len - 1] == '\\' || tmp[len - 1] == '/') {
+        tmp[len - 1] = 0;
+    }
+
+    // 逐级创建目录
+    for (p = tmp + 1; *p; p++) {
+        if (*p == '\\' || *p == '/') {
+            *p = 0;
+            // 尝试创建目录，忽略已存在的错误
+            CreateDirectoryA(tmp, NULL);
+            *p = '\\';
+        }
+    }
+    // 创建最后一级目录
+    CreateDirectoryA(tmp, NULL);
+
+    // 检查目录是否存在
+    DWORD attrib = GetFileAttributesA(tmp);
+    return (attrib != INVALID_FILE_ATTRIBUTES && (attrib & FILE_ATTRIBUTE_DIRECTORY));
+}
+
+// 获取配置文件所在目录
+static void GetConfigDir(char* dir, size_t size) {
+    strncpy(dir, g_config.configPath, size);
+    char* lastSlash = strrchr(dir, '\\');
+    if (lastSlash != NULL) {
+        *lastSlash = '\0';
+    }
+}
+
+// 获取日志文件所在目录
+static void GetLogDir(char* dir, size_t size) {
+    strncpy(dir, g_config.logPath, size);
+    char* lastSlash = strrchr(dir, '\\');
+    if (lastSlash != NULL) {
+        *lastSlash = '\0';
+    }
+}
+
+// 确保配置和日志目录存在
+static bool EnsureDirectoriesExist(void) {
+    char configDir[MAX_PATH];
+    char logDir[MAX_PATH];
+
+    GetConfigDir(configDir, sizeof(configDir));
+    GetLogDir(logDir, sizeof(logDir));
+
+    bool success = true;
+
+    // 创建配置目录
+    DWORD attrib = GetFileAttributesA(configDir);
+    if (attrib == INVALID_FILE_ATTRIBUTES || !(attrib & FILE_ATTRIBUTE_DIRECTORY)) {
+        if (!CreateDirectoryRecursive(configDir)) {
+            success = false;
+        }
+    }
+
+    // 创建日志目录
+    attrib = GetFileAttributesA(logDir);
+    if (attrib == INVALID_FILE_ATTRIBUTES || !(attrib & FILE_ATTRIBUTE_DIRECTORY)) {
+        if (!CreateDirectoryRecursive(logDir)) {
+            success = false;
+        }
+    }
+
+    return success;
+}
+
+// 默认配置文件内容
+static const char* DEFAULT_CONFIG_JSON =
+    "{\n"
+    "    \"version\": \"1.0\",\n"
+    "    \"modifier\": {\n"
+    "        \"key\": \"CAPSLOCK\",\n"
+    "        \"suppress_original\": true,\n"
+    "        \"control_led\": false\n"
+    "    },\n"
+    "    \"mappings\": [\n"
+    "        {\"from\": \"H\", \"to\": \"LEFT\"},\n"
+    "        {\"from\": \"J\", \"to\": \"DOWN\"},\n"
+    "        {\"from\": \"K\", \"to\": \"UP\"},\n"
+    "        {\"from\": \"L\", \"to\": \"RIGHT\"},\n"
+    "        {\"from\": \"I\", \"to\": \"END\"},\n"
+    "        {\"from\": \"O\", \"to\": \"HOME\"},\n"
+    "        {\"from\": \"U\", \"to\": \"PAGEDOWN\"},\n"
+    "        {\"from\": \"P\", \"to\": \"PAGEUP\"},\n"
+    "        {\"from\": \"1\", \"to\": \"F1\"},\n"
+    "        {\"from\": \"2\", \"to\": \"F2\"},\n"
+    "        {\"from\": \"3\", \"to\": \"F3\"},\n"
+    "        {\"from\": \"4\", \"to\": \"F4\"},\n"
+    "        {\"from\": \"5\", \"to\": \"F5\"},\n"
+    "        {\"from\": \"6\", \"to\": \"F6\"},\n"
+    "        {\"from\": \"7\", \"to\": \"F7\"},\n"
+    "        {\"from\": \"8\", \"to\": \"F8\"},\n"
+    "        {\"from\": \"9\", \"to\": \"F9\"},\n"
+    "        {\"from\": \"0\", \"to\": \"F10\"},\n"
+    "        {\"from\": \"MINUS\", \"to\": \"F11\"},\n"
+    "        {\"from\": \"EQUAL\", \"to\": \"F12\"}\n"
+    "    ],\n"
+    "    \"options\": {\n"
+    "        \"start_enabled\": true,\n"
+    "        \"log_level\": \"INFO\",\n"
+    "        \"log_to_file\": true,\n"
+    "        \"keyboard_layout\": \"auto\"\n"
+    "    }\n"
+    "}\n";
+
+// 确保配置文件存在，不存在则创建默认配置
+static bool EnsureConfigFileExists(void) {
+    // 检查配置文件是否存在
+    DWORD attrib = GetFileAttributesA(g_config.configPath);
+    if (attrib != INVALID_FILE_ATTRIBUTES) {
+        return true;  // 文件已存在
+    }
+
+    // 创建默认配置文件
+    if (WriteFileContent(g_config.configPath, DEFAULT_CONFIG_JSON)) {
+        return true;
+    }
+
+    return false;
 }
 
 // 简单的JSON字符串提取
@@ -98,15 +302,91 @@ void ConfigInit(void) {
     // 设置默认路径
     char appDataPath[MAX_PATH];
     if (SUCCEEDED(SHGetFolderPath(NULL, CSIDL_APPDATA, NULL, 0, appDataPath))) {
-        snprintf(g_config.configPath, MAX_PATH, "%s\\JohnHotKeyMap\\keymap.json", appDataPath);
-        snprintf(g_config.logPath, MAX_PATH, "%s\\JohnHotKeyMap\\logs\\hotkeymap.log", appDataPath);
+        snprintf(g_config.configPath, MAX_PATH, "%s\\PowerCapslock\\config.json", appDataPath);
+        snprintf(g_config.logPath, MAX_PATH, "%s\\PowerCapslock\\logs\\powercapslock.log", appDataPath);
     }
 
     ConfigLoadDefaults();
+
+    // 确保目录和配置文件存在
+    EnsureDirectoriesExist();
+    EnsureConfigFileExists();
 }
 
 void ConfigCleanup(void) {
     // 无需清理
+}
+
+// 解析 mappings 数组
+static void ParseMappings(const char* json) {
+    // 找到 mappings 数组的开始
+    const char* mappingsStart = strstr(json, "\"mappings\"");
+    if (mappingsStart == NULL) {
+        LOG_WARN("No mappings array found in config");
+        return;
+    }
+
+    // 找到数组开始的 [
+    const char* arrayStart = strchr(mappingsStart, '[');
+    if (arrayStart == NULL) {
+        LOG_WARN("Invalid mappings array format");
+        return;
+    }
+
+    // 清除现有映射
+    KeymapClear();
+
+    // 解析每个映射对象
+    const char* pos = arrayStart;
+    int mappingCount = 0;
+
+    while ((pos = strstr(pos, "\"from\"")) != NULL) {
+        // 找到 from 值
+        const char* fromStart = strchr(pos + 6, '"');
+        if (fromStart == NULL) break;
+        fromStart++;
+        const char* fromEnd = strchr(fromStart, '"');
+        if (fromEnd == NULL) break;
+
+        char fromKey[64] = {0};
+        int fromLen = fromEnd - fromStart;
+        if (fromLen >= 64) fromLen = 63;
+        strncpy(fromKey, fromStart, fromLen);
+
+        // 找到 to 值
+        const char* toPos = strstr(fromEnd, "\"to\"");
+        if (toPos == NULL) break;
+        const char* toStart = strchr(toPos + 4, '"');
+        if (toStart == NULL) break;
+        toStart++;
+        const char* toEnd = strchr(toStart, '"');
+        if (toEnd == NULL) break;
+
+        char toKey[64] = {0};
+        int toLen = toEnd - toStart;
+        if (toLen >= 64) toLen = 63;
+        strncpy(toKey, toStart, toLen);
+
+        // 转换为扫描码和VK码
+        WORD scanCode = NameToScanCode(fromKey);
+        UINT targetVk = NameToVkCode(toKey);
+
+        if (scanCode != 0 && targetVk != 0) {
+            char mappingName[128];
+            snprintf(mappingName, sizeof(mappingName), "%s->%s", fromKey, toKey);
+            KeymapAddMapping(scanCode, targetVk, strdup(mappingName));
+            mappingCount++;
+            LOG_DEBUG("Loaded mapping: %s -> %s (scanCode=0x%02X, vk=0x%02X)",
+                     fromKey, toKey, scanCode, targetVk);
+        } else {
+            LOG_WARN("Invalid mapping: %s -> %s (scanCode=0x%02X, vk=0x%02X)",
+                    fromKey, toKey, scanCode, targetVk);
+        }
+
+        pos = toEnd;
+    }
+
+    LOG_INFO("Loaded %d key mappings from config", mappingCount);
 }
 
 bool ConfigLoad(const char* path) {
@@ -151,6 +431,9 @@ bool ConfigLoad(const char* path) {
     if (ExtractJsonString(content, "keyboard_layout", temp, sizeof(temp))) {
         strncpy(g_config.keyboardLayout, temp, sizeof(g_config.keyboardLayout) - 1);
     }
+
+    // 解析 mappings 数组
+    ParseMappings(content);
 
     free(content);
     LOG_INFO("Config loaded from: %s", configPath);

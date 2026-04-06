@@ -1,4 +1,4 @@
-# JohnHotKeyMap
+# PowerCapslock
 
 Windows 键盘热键映射工具 - 将 CapsLock 改造为强大的修饰键
 
@@ -32,7 +32,7 @@ Windows 键盘热键映射工具 - 将 CapsLock 改造为强大的修饰键
 
 ### 配置文件
 
-配置文件位置：`%APPDATA%\JohnHotKeyMap\keymap.json`
+配置文件位置：`%APPDATA%\PowerCapslock\config.json`
 
 ```json
 {
@@ -65,8 +65,8 @@ Windows 键盘热键映射工具 - 将 CapsLock 改造为强大的修饰键
 
 ```batch
 # 克隆仓库
-git clone https://github.com/yourusername/JohnHotKeyMap.git
-cd JohnHotKeyMap
+git clone https://github.com/yourusername/PowerCapslock.git
+cd PowerCapslock
 
 # 构建
 mkdir build
@@ -88,7 +88,7 @@ mingw32-make -j4
 ## 项目结构
 
 ```
-JohnHotKeyMap/
+PowerCapslock/
 ├── src/              # 源代码
 ├── resources/        # 资源文件
 ├── config/           # 默认配置
