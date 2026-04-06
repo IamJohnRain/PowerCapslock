@@ -12,12 +12,51 @@ typedef struct {
 
 static HookState g_hook = {0};
 
-// 发送按键输入
+// 获取当前修饰键物理状态（使用 GetAsyncKeyState 获取实时状态）
+static void GetModifierState(bool* shift, bool* ctrl, bool* alt) {
+    *shift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+    *ctrl = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+    *alt = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
+}
+
+// 检查是否是扩展键（导航键、数字小键盘等）
+static bool IsExtendedKey(UINT vk) {
+    switch (vk) {
+        case VK_LEFT:
+        case VK_RIGHT:
+        case VK_UP:
+        case VK_DOWN:
+        case VK_HOME:
+        case VK_END:
+        case VK_PRIOR:  // PageUp
+        case VK_NEXT:   // PageDown
+        case VK_INSERT:
+        case VK_DELETE:
+        case VK_NUMLOCK:
+        case VK_DIVIDE:
+        case VK_RCONTROL:
+        case VK_RMENU:
+        case VK_SNAPSHOT:
+        case VK_CANCEL:
+            return true;
+        default:
+            return false;
+    }
+}
+
+// 发送按键输入（保留修饰键状态）
+// 由于修饰键（Shift/Ctrl/Alt）物理按下时系统会自动识别，
+// 我们只需要发送目标键即可，系统会自动组合成 Shift+目标键 等
 static void SendKeyInput(UINT vk, bool keyDown) {
     INPUT input = {0};
     input.type = INPUT_KEYBOARD;
     input.ki.wVk = vk;
     input.ki.dwFlags = keyDown ? 0 : KEYEVENTF_KEYUP;
+
+    // 扩展键需要设置 KEYEVENTF_EXTENDEDKEY 标志
+    if (IsExtendedKey(vk)) {
+        input.ki.dwFlags |= KEYEVENTF_EXTENDEDKEY;
+    }
 
     UINT sent = SendInput(1, &input, sizeof(INPUT));
     if (sent != 1) {
@@ -91,10 +130,12 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
         return CallNextHookEx(g_hook.hHook, nCode, wParam, lParam);
     }
 
-    // 找到映射，发送目标键
+    // 找到映射，发送目标键（保留修饰键状态）
     if (isKeyDown) {
-        LOG_DEBUG("Mapping triggered: %s (scanCode=0x%02X -> VK=%d)",
-                  mapping->name, scanCode, mapping->targetVk);
+        bool shift = false, ctrl = false, alt = false;
+        GetModifierState(&shift, &ctrl, &alt);
+        LOG_DEBUG("Mapping triggered: %s (scanCode=0x%02X -> VK=%d) [Shift=%d Ctrl=%d Alt=%d]",
+                  mapping->name, scanCode, mapping->targetVk, shift, ctrl, alt);
         SendKeyInput(mapping->targetVk, true);
         return 1;  // 拦截原按键
     }
