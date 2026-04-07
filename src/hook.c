@@ -103,8 +103,16 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
     bool isKeyDown = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
     bool isKeyUp = (wParam == WM_KEYUP || wParam == WM_SYSKEYUP);
 
+    // 检测是否是模拟按键（由 SendInput 生成）
+    bool isInjected = (pKb->flags & LLKHF_INJECTED) != 0;
+
     // 检查 CapsLock (VK_CAPITAL = 20)
     if (vkCode == VK_CAPITAL) {
+        // 放行模拟按键（用于自动关闭 CapsLock）
+        if (isInjected) {
+            return CallNextHookEx(g_hook.hHook, nCode, wParam, lParam);
+        }
+
         if (isKeyDown && !g_hook.capslockHeld) {
             g_hook.capslockHeld = true;
             LOG_DEBUG("CapsLock pressed (scanCode=0x%02X)", scanCode);
