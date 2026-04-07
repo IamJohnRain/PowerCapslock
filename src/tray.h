@@ -26,7 +26,16 @@ void TrayCleanup(void);
 // enabled: true显示正常图标，false显示禁用图标
 void TraySetState(bool enabled);
 
+// 启动/停止 CapsLock 状态检测定时器
+void TrayStartCapsLockMonitor(void);
+void TrayStopCapsLockMonitor(void);
+
 // 获取托盘窗口句柄
 HWND TrayGetWindow(void);
+
+// 显示全局提示框
+// title: 提示框标题
+// message: 提示框消息
+void TrayShowToast(const char* title, const wchar_t* message);
 
 #endif // TRAY_H
