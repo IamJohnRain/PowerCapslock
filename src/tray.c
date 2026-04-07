@@ -338,6 +338,9 @@ void TrayShowToast(const char* title, const wchar_t* message) {
         return;
     }
 
+    // 设置窗口文本（显示内容）
+    SetWindowTextW(g_toastWindow, message);
+
     // 设置窗口透明效果
     SetWindowLongPtrW(g_toastWindow, GWL_EXSTYLE,
                       GetWindowLongPtrW(g_toastWindow, GWL_EXSTYLE) | WS_EX_LAYERED);
