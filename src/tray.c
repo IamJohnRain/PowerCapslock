@@ -278,10 +278,6 @@ static LRESULT CALLBACK ToastWndProc(HWND hWnd, UINT message, WPARAM wParam, LPA
             }
             return 0;
 
-        case WM_DESTROY:
-            PostQuitMessage(0);
-            return 0;
-
         case WM_PAINT: {
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hWnd, &ps);
