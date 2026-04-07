@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -91,11 +92,40 @@
             font-size: 18px;
             transition: transform 0.3s, box-shadow 0.3s;
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            margin: 10px;
         }
 
         .cta-button:hover {
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .download-button {
+            display: inline-block;
+            background: #764ba2;
+            color: white;
+            padding: 15px 40px;
+            border-radius: 30px;
+            text-decoration: none;
+            font-weight: bold;
+            font-size: 18px;
+            transition: transform 0.3s, box-shadow 0.3s;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            margin: 10px;
+        }
+
+        .download-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+            background: #8b5cf6;
+        }
+
+        .button-group {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
         }
 
         .features {
@@ -349,7 +379,10 @@
         <div class="container">
             <h1>将 CapsLock 键改造成强大的修饰键</h1>
             <p>提升 Windows 键盘效率的神器，灵感来源于 Vim 编辑器</p>
-            <a href="#installation" class="cta-button">立即开始使用</a>
+            <div class="button-group">
+                <a href="https://github.com/IamJohnRain/PowerCapslock/releases" target="_blank" class="download-button">📥 下载最新版本</a>
+                <a href="#installation" class="cta-button">📖 查看安装指南</a>
+            </div>
         </div>
     </section>
 
@@ -535,15 +568,19 @@
     <section class="installation" id="installation">
         <div class="container">
             <h2 class="section-title">安装指南</h2>
+            <div class="button-group" style="margin-bottom: 40px;">
+                <a href="https://github.com/IamJohnRain/PowerCapslock/releases" target="_blank" class="download-button">📥 下载最新版本</a>
+            </div>
             <div class="install-steps">
                 <div class="install-step">
                     <h4>步骤 1: 下载项目</h4>
-                    <p>从 GitHub 克隆项目仓库或下载最新版本的压缩包</p>
-                    <code>git clone https://github.com/yourusername/PowerCapslock.git</code>
+                    <p>点击上方按钮访问 GitHub Releases 页面，下载最新版本的压缩包</p>
+                    <p>或者从 GitHub 克隆项目仓库：</p>
+                    <code>git clone https://github.com/IamJohnRain/PowerCapslock.git</code>
                 </div>
                 <div class="install-step">
                     <h4>步骤 2: 运行安装脚本</h4>
-                    <p>右键点击 <code>install.bat</code>，选择"以管理员身份运行"</p>
+                    <p>解压下载的文件，右键点击 <code>install.bat</code>，选择"以管理员身份运行"</p>
                     <p>程序将自动完成编译、安装并添加到开机启动项</p>
                 </div>
                 <div class="install-step">
@@ -561,10 +598,10 @@
     <footer>
         <div class="container">
             <div class="footer-links">
-                <a href="#">GitHub 仓库</a>
-                <a href="#">问题反馈</a>
-                <a href="#">使用文档</a>
-                <a href="#">更新日志</a>
+                <a href="https://github.com/IamJohnRain/PowerCapslock" target="_blank">GitHub 仓库</a>
+                <a href="https://github.com/IamJohnRain/PowerCapslock/releases" target="_blank">下载版本</a>
+                <a href="https://github.com/IamJohnRain/PowerCapslock/issues" target="_blank">问题反馈</a>
+                <a href="https://github.com/IamJohnRain/PowerCapslock/blob/master/README.md" target="_blank">使用文档</a>
             </div>
             <p class="copyright">© 2024 PowerCapslock. MIT License. 灵感来源于 Vim 编辑器</p>
         </div>
