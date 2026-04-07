@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PowerCapslock - Windows 键盘热键映射工具</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        header {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px 0;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 30px;
+        }
+
+        .nav-links a {
+            text-decoration: none;
+            color: #333;
+            font-weight: 500;
+            transition: color 0.3s;
+        }
+
+        .nav-links a:hover {
+            color: #667eea;
+        }
+
+        .hero {
+            text-align: center;
+            padding: 100px 0;
+            color: white;
+        }
+
+        .hero h1 {
+            font-size: 48px;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .hero p {
+            font-size: 20px;
+            margin-bottom: 30px;
+            opacity: 0.9;
+        }
+
+        .cta-button {
+            display: inline-block;
+            background: white;
+            color: #667eea;
+            padding: 15px 40px;
+            border-radius: 30px;
+            text-decoration: none;
+            font-weight: bold;
+            font-size: 18px;
+            transition: transform 0.3s, box-shadow 0.3s;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .cta-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .features {
+            padding: 80px 0;
+            background: white;
+        }
+
+        .section-title {
+            text-align: center;
+            font-size: 36px;
+            margin-bottom: 60px;
+            color: #333;
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+        }
+
+        .feature-card {
+            background: #f8f9fa;
+            padding: 30px;
+            border-radius: 15px;
+            transition: transform 0.3s, box-shadow 0.3s;
+            border-left: 4px solid #667eea;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .feature-card h3 {
+            font-size: 24px;
+            margin-bottom: 15px;
+            color: #667eea;
+        }
+
+        .feature-card p {
+            color: #666;
+            line-height: 1.8;
+        }
+
+        .key-mappings {
+            padding: 80px 0;
+            background: #f8f9fa;
+        }
+
+        .mapping-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .mapping-table th,
+        .mapping-table td {
+            padding: 15px 20px;
+            text-align: left;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .mapping-table th {
+            background: #667eea;
+            color: white;
+            font-weight: 600;
+        }
+
+        .mapping-table tr:hover {
+            background: #f8f9fa;
+        }
+
+        .key-badge {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            padding: 5px 15px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 14px;
+            margin: 0 3px;
+        }
+
+        .advantages {
+            padding: 80px 0;
+            background: white;
+        }
+
+        .advantage-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            transition: transform 0.3s;
+        }
+
+        .advantage-item:hover {
+            transform: translateX(10px);
+        }
+
+        .advantage-icon {
+            font-size: 40px;
+            margin-right: 20px;
+            min-width: 60px;
+            text-align: center;
+        }
+
+        .advantage-content h4 {
+            font-size: 20px;
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .advantage-content p {
+            color: #666;
+        }
+
+        .tech-stack {
+            padding: 80px 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .tech-stack .section-title {
+            color: white;
+        }
+
+        .tech-items {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 20px;
+        }
+
+        .tech-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px 30px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+            font-size: 18px;
+            font-weight: 500;
+        }
+
+        .installation {
+            padding: 80px 0;
+            background: white;
+        }
+
+        .install-steps {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .install-step {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            border-left: 4px solid #764ba2;
+        }
+
+        .install-step h4 {
+            font-size: 18px;
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .install-step code {
+            background: #e9ecef;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+
+        footer {
+            background: #333;
+            color: white;
+            padding: 40px 0;
+            text-align: center;
+        }
+
+        .footer-links {
+            margin-bottom: 20px;
+        }
+
+        .footer-links a {
+            color: white;
+            text-decoration: none;
+            margin: 0 15px;
+            transition: opacity 0.3s;
+        }
+
+        .footer-links a:hover {
+            opacity: 0.8;
+        }
+
+        .copyright {
+            opacity: 0.7;
+            font-size: 14px;
+        }
+
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 32px;
+            }
+
+            .hero p {
+                font-size: 16px;
+            }
+
+            .nav-links {
+                display: none;
+            }
+
+            .feature-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .mapping-table {
+                font-size: 14px;
+            }
+
+            .mapping-table th,
+            .mapping-table td {
+                padding: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <nav>
+                <div class="logo">⌨️ PowerCapslock</div>
+                <div class="nav-links">
+                    <a href="#features">功能特性</a>
+                    <a href="#mappings">键位映射</a>
+                    <a href="#advantages">核心优势</a>
+                    <a href="#installation">安装指南</a>
+                </div>
+            </nav>
+        </div>
+    </header>
+
+    <section class="hero">
+        <div class="container">
+            <h1>将 CapsLock 键改造成强大的修饰键</h1>
+            <p>提升 Windows 键盘效率的神器，灵感来源于 Vim 编辑器</p>
+            <a href="#installation" class="cta-button">立即开始使用</a>
+        </div>
+    </section>
+
+    <section class="features" id="features">
+        <div class="container">
+            <h2 class="section-title">功能特性</h2>
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <h3>🎯 方向键映射</h3>
+                    <p>将 CapsLock + h/j/k/l 映射为左/下/上/右方向键，无需离开主键盘区域即可快速导航，大幅提升操作效率。</p>
+                </div>
+                <div class="feature-card">
+                    <h3>⚡ 功能键映射</h3>
+                    <p>支持 Home/End、PageDown/PageUp 以及 F1-F12 等常用功能键的快捷访问，让常用键位触手可及。</p>
+                </div>
+                <div class="feature-card">
+                    <h3>🌍 多语言支持</h3>
+                    <p>基于物理按键位置（Scan Code）进行识别，完全不受键盘布局影响，支持所有语言和布局。</p>
+                </div>
+                <div class="feature-card">
+                    <h3>🖥️ 系统托盘</h3>
+                    <p>提供可视化的托盘图标，支持一键启用/禁用功能，右键菜单提供更多操作选项。</p>
+                </div>
+                <div class="feature-card">
+                    <h3>📝 日志调试</h3>
+                    <p>详细的运行日志记录，便于排查问题和调试，支持多级别日志输出。</p>
+                </div>
+                <div class="feature-card">
+                    <h3>🚀 开机启动</h3>
+                    <p>支持 Windows 开机自动运行，安装后即可享受无缝的键盘增强体验。</p>
+                </div>
+                <div class="feature-card">
+                    <h3>⚙️ 配置灵活</h3>
+                    <p>使用 JSON 配置文件管理所有映射设置，支持自定义键位映射和功能配置。</p>
+                </div>
+                <div class="feature-card">
+                    <h3>🔒 轻量高效</h3>
+                    <p>基于 C11 语言开发，占用资源极低，运行稳定流畅，不影响系统性能。</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="key-mappings" id="mappings">
+        <div class="container">
+            <h2 class="section-title">键位映射表</h2>
+            <table class="mapping-table">
+                <thead>
+                    <tr>
+                        <th>按键组合</th>
+                        <th>映射功能</th>
+                        <th>说明</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><span class="key-badge">CapsLock</span> + <span class="key-badge">H</span></td>
+                        <td>← 左方向键</td>
+                        <td>向左移动光标</td>
+                    </tr>
+                    <tr>
+                        <td><span class="key-badge">CapsLock</span> + <span class="key-badge">J</span></td>
+                        <td>↓ 下方向键</td>
+                        <td>向下移动光标</td>
+                    </tr>
+                    <tr>
+                        <td><span class="key-badge">CapsLock</span> + <span class="key-badge">K</span></td>
+                        <td>↑ 上方向键</td>
+                        <td>向上移动光标</td>
+                    </tr>
+                    <tr>
+                        <td><span class="key-badge">CapsLock</span> + <span class="key-badge">L</span></td>
+                        <td>→ 右方向键</td>
+                        <td>向右移动光标</td>
+                    </tr>
+                    <tr>
+                        <td><span class="key-badge">CapsLock</span> + <span class="key-badge">I</span></td>
+                        <td>Home 键</td>
+                        <td>跳转到行首</td>
+                    </tr>
+                    <tr>
+                        <td><span class="key-badge">CapsLock</span> + <span class="key-badge">O</span></td>
+                        <td>End 键</td>
+                        <td>跳转到行尾</td>
+                    </tr>
+                    <tr>
+                        <td><span class="key-badge">CapsLock</span> + <span class="key-badge">U</span></td>
+                        <td>PageDown 键</td>
+                        <td>向下翻页</td>
+                    </tr>
+                    <tr>
+                        <td><span class="key-badge">CapsLock</span> + <span class="key-badge">P</span></td>
+                        <td>PageUp 键</td>
+                        <td>向上翻页</td>
+                    </tr>
+                    <tr>
+                        <td><span class="key-badge">CapsLock</span> + <span class="key-badge">1-9</span></td>
+                        <td>F1-F9 键</td>
+                        <td>功能键 F1 到 F9</td>
+                    </tr>
+                    <tr>
+                        <td><span class="key-badge">CapsLock</span> + <span class="key-badge">0</span></td>
+                        <td>F10 键</td>
+                        <td>功能键 F10</td>
+                    </tr>
+                    <tr>
+                        <td><span class="key-badge">CapsLock</span> + <span class="key-badge">-</span></td>
+                        <td>F11 键</td>
+                        <td>功能键 F11</td>
+                    </tr>
+                    <tr>
+                        <td><span class="key-badge">CapsLock</span> + <span class="key-badge">=</span></td>
+                        <td>F12 键</td>
+                        <td>功能键 F12</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="advantages" id="advantages">
+        <div class="container">
+            <h2 class="section-title">核心优势</h2>
+            <div class="advantage-item">
+                <div class="advantage-icon">🎨</div>
+                <div class="advantage-content">
+                    <h4>Vim 风格设计</h4>
+                    <p>灵感来源于经典 Vim 编辑器的键位设计，为程序员和文本编辑用户提供熟悉的操作体验。</p>
+                </div>
+            </div>
+            <div class="advantage-item">
+                <div class="advantage-icon">⚡</div>
+                <div class="advantage-content">
+                    <h4>提升工作效率</h4>
+                    <p>无需频繁移动手到键盘边缘的方向键区域，减少手指移动距离，显著提升输入效率。</p>
+                </div>
+            </div>
+            <div class="advantage-item">
+                <div class="advantage-icon">🌐</div>
+                <div class="advantage-content">
+                    <h4>跨语言兼容</h4>
+                    <p>基于物理按键位置而非虚拟键码，完美支持中文、英文、日文等各种键盘布局。</p>
+                </div>
+            </div>
+            <div class="advantage-item">
+                <div class="advantage-icon">🎯</div>
+                <div class="advantage-content">
+                    <h4>精准映射</h4>
+                    <p>使用 Windows Low-level Keyboard Hook 技术，确保键位映射的准确性和实时性。</p>
+                </div>
+            </div>
+            <div class="advantage-item">
+                <div class="advantage-icon">🛡️</div>
+                <div class="advantage-content">
+                    <h4>系统安全</h4>
+                    <p>完全基于 Windows 官方 API 开发，不修改系统底层，安全可靠，可随时卸载。</p>
+                </div>
+            </div>
+            <div class="advantage-item">
+                <div class="advantage-icon">📦</div>
+                <div class="advantage-content">
+                    <h4>开箱即用</h4>
+                    <p>提供完整的安装脚本和预配置文件，下载后一键安装，无需复杂配置即可使用。</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="tech-stack" id="tech">
+        <div class="container">
+            <h2 class="section-title">技术栈</h2>
+            <div class="tech-items">
+                <div class="tech-item">C11</div>
+                <div class="tech-item">Windows API</div>
+                <div class="tech-item">CMake</div>
+                <div class="tech-item">Low-level Keyboard Hook</div>
+                <div class="tech-item">Scan Code</div>
+                <div class="tech-item">JSON 配置</div>
+            </div>
+        </div>
+    </section>
+
+    <section class="installation" id="installation">
+        <div class="container">
+            <h2 class="section-title">安装指南</h2>
+            <div class="install-steps">
+                <div class="install-step">
+                    <h4>步骤 1: 下载项目</h4>
+                    <p>从 GitHub 克隆项目仓库或下载最新版本的压缩包</p>
+                    <code>git clone https://github.com/yourusername/PowerCapslock.git</code>
+                </div>
+                <div class="install-step">
+                    <h4>步骤 2: 运行安装脚本</h4>
+                    <p>右键点击 <code>install.bat</code>，选择"以管理员身份运行"</p>
+                    <p>程序将自动完成编译、安装并添加到开机启动项</p>
+                </div>
+                <div class="install-step">
+                    <h4>步骤 3: 开始使用</h4>
+                    <p>安装完成后，程序会自动启动。按住 <span class="key-badge">CapsLock</span> + 映射键即可使用！</p>
+                </div>
+                <div class="install-step">
+                    <h4>步骤 4: 自定义配置（可选）</h4>
+                    <p>编辑配置文件 <code>%APPDATA%\PowerCapslock\config.json</code> 来自定义键位映射</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <div class="container">
+            <div class="footer-links">
+                <a href="#">GitHub 仓库</a>
+                <a href="#">问题反馈</a>
+                <a href="#">使用文档</a>
+                <a href="#">更新日志</a>
+            </div>
+            <p class="copyright">© 2024 PowerCapslock. MIT License. 灵感来源于 Vim 编辑器</p>
+        </div>
+    </footer>
+</body>
+</html>
