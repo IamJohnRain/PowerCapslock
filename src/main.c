@@ -4,6 +4,8 @@
 #include "hook.h"
 #include "tray.h"
 #include "keyboard_layout.h"
+#include "voice.h"
+#include "audio.h"
 #include <windows.h>
 #include <stdio.h>
 
@@ -54,6 +56,28 @@ static BOOL InitializeModules(void) {
     HookSetEnabled(config->startEnabled);
     TraySetState(config->startEnabled);
 
+    // 初始化音频模块
+    if (AudioInit()) {
+        LOG_INFO("Audio module initialized successfully");
+
+        // 初始化语音识别模块
+        char modelDir[MAX_PATH];
+        GetModuleFileNameA(NULL, modelDir, MAX_PATH);
+        char* lastSlash = strrchr(modelDir, '\\');
+        if (lastSlash != NULL) {
+            *(lastSlash + 1) = '\0';
+            strcat(modelDir, "models");
+        }
+
+        if (VoiceInit(modelDir)) {
+            LOG_INFO("Voice recognition initialized successfully");
+        } else {
+            LOG_INFO("Voice recognition not available: model not loaded");
+        }
+    } else {
+        LOG_WARN("Audio module initialization failed, voice input disabled");
+    }
+
     LOG_INFO("All modules initialized successfully");
     return TRUE;
 }
@@ -70,6 +94,12 @@ static void CleanupModules(void) {
 
     // 清理系统托盘
     TrayCleanup();
+
+    // 清理语音识别模块
+    VoiceCleanup();
+
+    // 清理音频模块
+    AudioCleanup();
 
     // 清理键位映射模块
     KeymapCleanup();

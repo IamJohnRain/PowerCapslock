@@ -1,6 +1,8 @@
 #include "hook.h"
 #include "keymap.h"
 #include "logger.h"
+#include "voice.h"
+#include "audio.h"
 #include <stdio.h>
 
 // 全局状态
@@ -129,6 +131,82 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
     // 如果 CapsLock 没按下，正常传递
     if (!g_hook.capslockHeld) {
         return CallNextHookEx(g_hook.hHook, nCode, wParam, lParam);
+    }
+
+    // 检测 CapsLock+A 语音输入
+    // A 键扫描码是 0x1E
+    if (scanCode == 0x1E) {
+        static bool voiceKeyDown = false;
+
+        if (isKeyDown && !voiceKeyDown) {
+            voiceKeyDown = true;
+
+            // 检查模型是否加载
+            if (!VoiceIsModelLoaded()) {
+                MessageBox(NULL,
+                    TEXT("语音识别模型未加载。\n\n")
+                    TEXT("请将模型文件放入 models 目录后重启程序。\n")
+                    TEXT("下载地址: https://github.com/k2-fsa/sherpa-onnx/releases"),
+                    TEXT("PowerCapslock - 语音输入"),
+                    MB_OK | MB_ICONINFORMATION);
+                return 1;
+            }
+
+            // 开始录音
+            if (AudioStartRecording()) {
+                LOG_DEBUG("语音输入开始录音");
+            }
+        }
+        else if (isKeyUp && voiceKeyDown) {
+            voiceKeyDown = false;
+
+            // 停止录音并识别
+            float* samples = NULL;
+            int numSamples = 0;
+            if (AudioStopRecording(&samples, &numSamples)) {
+                char* text = VoiceRecognize(samples, numSamples);
+                if (text != NULL) {
+                    // 模拟键盘输入识别结果
+                    INPUT* inputs = NULL;
+                    int inputCount = 0;
+                    int textLen = (int)strlen(text);
+
+                    // 为每个字符创建输入事件
+                    inputs = (INPUT*)malloc(textLen * 2 * sizeof(INPUT));
+                    if (inputs != NULL) {
+                        for (int i = 0; i < textLen; i++) {
+                            // 按下
+                            inputs[inputCount].type = INPUT_KEYBOARD;
+                            inputs[inputCount].ki.wVk = 0;
+                            inputs[inputCount].ki.wScan = (WORD)text[i];
+                            inputs[inputCount].ki.dwFlags = KEYEVENTF_UNICODE;
+                            inputs[inputCount].ki.time = 0;
+                            inputs[inputCount].ki.dwExtraInfo = 0;
+                            inputCount++;
+
+                            // 释放
+                            inputs[inputCount].type = INPUT_KEYBOARD;
+                            inputs[inputCount].ki.wVk = 0;
+                            inputs[inputCount].ki.wScan = (WORD)text[i];
+                            inputs[inputCount].ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
+                            inputs[inputCount].ki.time = 0;
+                            inputs[inputCount].ki.dwExtraInfo = 0;
+                            inputCount++;
+                        }
+
+                        SendInput(inputCount, inputs, sizeof(INPUT));
+                        free(inputs);
+                        LOG_DEBUG("语音识别结果已输入: %s", text);
+                    }
+                    free(text);
+                }
+                if (samples != NULL) {
+                    free(samples);
+                }
+            }
+            LOG_DEBUG("语音输入结束");
+        }
+        return 1;  // 拦截
     }
 
     // 查找映射

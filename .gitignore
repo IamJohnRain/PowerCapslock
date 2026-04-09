@@ -27,3 +27,10 @@ Thumbs.db
 .arts/
 .release/
 .claude/
+
+# Temporary reference projects
+temp/
+
+# Voice recognition models and libraries (download separately)
+models/
+lib/
