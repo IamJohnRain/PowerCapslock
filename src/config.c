@@ -432,6 +432,12 @@ bool ConfigLoad(const char* path) {
         strncpy(g_config.keyboardLayout, temp, sizeof(g_config.keyboardLayout) - 1);
     }
 
+    // voice_input.enabled
+    ExtractJsonBool(content, "enabled", &g_config.voiceInputEnabled);
+
+    // voice_input.asked
+    ExtractJsonBool(content, "asked", &g_config.voiceInputAsked);
+
     // 解析 mappings 数组
     ParseMappings(content);
 
@@ -488,6 +494,10 @@ bool ConfigSave(const char* path) {
         "        \"log_level\": \"%s\",\n"
         "        \"log_to_file\": %s,\n"
         "        \"keyboard_layout\": \"%s\"\n"
+        "    },\n"
+        "    \"voice_input\": {\n"
+        "        \"enabled\": %s,\n"
+        "        \"asked\": %s\n"
         "    }\n"
         "}\n",
         g_config.modifierKey,
@@ -526,6 +536,8 @@ void ConfigLoadDefaults(void) {
     g_config.logLevel = LOG_LEVEL_INFO;
     g_config.logToFile = true;
     strncpy(g_config.keyboardLayout, "auto", sizeof(g_config.keyboardLayout) - 1);
+    g_config.voiceInputEnabled = false;
+    g_config.voiceInputAsked = false;
 }
 
 const char* ConfigGetPath(void) {

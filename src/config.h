@@ -18,6 +18,10 @@ typedef struct {
     bool logToFile;                // 是否写入文件
     char keyboardLayout[32];       // 键盘布局
 
+    // 语音输入配置
+    bool voiceInputEnabled;        // 是否启用语音输入
+    bool voiceInputAsked;          // 用户是否已经选择过是否启用
+
     // 路径
     char configPath[MAX_PATH];     // 配置文件路径
     char logPath[MAX_PATH];        // 日志文件路径
