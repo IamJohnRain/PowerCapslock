@@ -34,3 +34,8 @@ temp/
 # Voice recognition models and libraries (download separately)
 models/
 lib/
+
+# Test packaging scripts (don't commit)
+scripts/build.bat
+scripts/install.bat
+scripts/uninstall.bat

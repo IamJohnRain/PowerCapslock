@@ -143,11 +143,11 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 
             // 检查模型是否加载
             if (!VoiceIsModelLoaded()) {
-                MessageBox(NULL,
-                    TEXT("语音识别模型未加载。\n\n")
-                    TEXT("请将模型文件放入 models 目录后重启程序。\n")
-                    TEXT("下载地址: https://github.com/k2-fsa/sherpa-onnx/releases"),
-                    TEXT("PowerCapslock - 语音输入"),
+                MessageBoxW(NULL,
+                    L"语音识别模型未加载。\n\n"
+                    L"请将模型文件放入 models 目录后重启程序。\n"
+                    L"下载地址: https://github.com/k2-fsa/sherpa-onnx/releases",
+                    L"PowerCapslock - 语音输入",
                     MB_OK | MB_ICONINFORMATION);
                 return 1;
             }

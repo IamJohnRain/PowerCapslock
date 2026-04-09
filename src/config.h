@@ -22,9 +22,13 @@ typedef struct {
     bool voiceInputEnabled;        // 是否启用语音输入
     bool voiceInputAsked;          // 用户是否已经选择过是否启用
 
+    // 自定义路径配置
+    char logDirPath[MAX_PATH];     // 日志存储目录
+    char modelDirPath[MAX_PATH];   // 模型存储目录
+
     // 路径
     char configPath[MAX_PATH];     // 配置文件路径
-    char logPath[MAX_PATH];        // 日志文件路径
+    char logPath[MAX_PATH];        // 日志文件路径（完整路径含文件名）
 } Config;
 
 // 初始化配置模块

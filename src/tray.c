@@ -2,6 +2,7 @@
 #include "hook.h"
 #include "config.h"
 #include "logger.h"
+#include "config_dialog.h"
 #include <shellapi.h>
 #include <stdio.h>
 #include <windowsx.h>
@@ -116,6 +117,11 @@ static LRESULT CALLBACK TrayWndProc(HWND hWnd, UINT message, WPARAM wParam, LPAR
                     break;
                 }
 
+                case IDM_CONFIGURE: {
+                    ShowConfigDialog(hWnd);
+                    break;
+                }
+
                 case IDM_ABOUT:
                     MessageBoxW(hWnd,
                         L"JohnHotKeyMap v1.0\n\n"
@@ -204,6 +210,7 @@ HWND TrayInit(HINSTANCE hInstance) {
     AppendMenuW(g_tray.hMenu, MF_STRING, IDM_DISABLE, L"禁用");
     AppendMenuW(g_tray.hMenu, MF_SEPARATOR, 0, NULL);
     AppendMenuW(g_tray.hMenu, MF_STRING, IDM_SHOW_LOG, L"查看日志");
+    AppendMenuW(g_tray.hMenu, MF_STRING, IDM_CONFIGURE, L"配置");
     AppendMenuW(g_tray.hMenu, MF_STRING, IDM_ABOUT, L"关于");
     AppendMenuW(g_tray.hMenu, MF_SEPARATOR, 0, NULL);
     AppendMenuW(g_tray.hMenu, MF_STRING, IDM_EXIT, L"退出");

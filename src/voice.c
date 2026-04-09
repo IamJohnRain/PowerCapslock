@@ -30,16 +30,21 @@ bool VoiceInit(const char* modelDir) {
 
     // 构建模型文件路径
     char modelPath[MAX_PATH];
+    char tokensPath[MAX_PATH];
 
     // SenseVoice 模型路径
     snprintf(modelPath, sizeof(modelPath),
              "%s\\SenseVoice-Small\\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\\model.onnx",
              modelDir);
+    snprintf(tokensPath, sizeof(tokensPath),
+             "%s\\SenseVoice-Small\\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\\tokens.txt",
+             modelDir);
 
     // 检查模型文件是否存在
     DWORD modelAttr = GetFileAttributesA(modelPath);
+    DWORD tokensAttr = GetFileAttributesA(tokensPath);
 
-    if (modelAttr == INVALID_FILE_ATTRIBUTES) {
+    if (modelAttr == INVALID_FILE_ATTRIBUTES || tokensAttr == INVALID_FILE_ATTRIBUTES) {
         LOG_WARN("语音模型文件不存在: %s", modelDir);
         LOG_INFO("请下载模型并放入 models 目录");
         LOG_INFO("下载地址: https://github.com/HaujetZhao/CapsWriter-Offline/releases/tag/models");
@@ -54,6 +59,7 @@ bool VoiceInit(const char* modelDir) {
     memset(&config, 0, sizeof(config));
 
     // SenseVoice 模型配置
+    config.model_config.tokens = tokensPath;
     config.model_config.sense_voice.model = modelPath;
     config.model_config.sense_voice.language = "zh";
     config.model_config.sense_voice.use_itn = 1;

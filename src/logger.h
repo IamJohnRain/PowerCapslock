@@ -25,6 +25,10 @@ void LoggerSetLevel(LogLevel level);
 // 获取当前日志级别
 LogLevel LoggerGetLevel(void);
 
+// 清理旧日志，只保留最近 keepDays 天的日志
+// 需要在 LoggerInit 之后调用
+void LoggerCleanupOldLogs(int keepDays);
+
 // 记录日志消息
 void LogMessage(LogLevel level, const char* format, ...);
 

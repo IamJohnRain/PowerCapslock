@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <shlobj.h>
 
 static Config g_config = {0};
@@ -76,6 +77,26 @@ static UINT NameToVkCode(const char* name) {
         }
     }
     return 0;
+}
+
+// 根据扫描码查找键名（反向查找，用于保存配置）
+static const char* ScanCodeToName(WORD scanCode) {
+    for (int i = 0; keyNameTable[i].name != NULL; i++) {
+        if (keyNameTable[i].scanCode == scanCode) {
+            return keyNameTable[i].name;
+        }
+    }
+    return NULL;
+}
+
+// 根据VK码查找键名（反向查找，用于保存配置）
+static const char* VkCodeToName(UINT vkCode) {
+    for (int i = 0; keyNameTable[i].name != NULL; i++) {
+        if (keyNameTable[i].vkCode == vkCode) {
+            return keyNameTable[i].name;
+        }
+    }
+    return NULL;
 }
 
 // 简单的JSON解析辅助函数
@@ -296,14 +317,59 @@ static bool ExtractJsonBool(const char* json, const char* key, bool* value) {
     return false;
 }
 
+// 向前声明
+static bool CreateDirectoryRecursive(const char* path);
+
 void ConfigInit(void) {
     memset(&g_config, 0, sizeof(Config));
 
-    // 设置默认路径
-    char appDataPath[MAX_PATH];
-    if (SUCCEEDED(SHGetFolderPath(NULL, CSIDL_APPDATA, NULL, 0, appDataPath))) {
-        snprintf(g_config.configPath, MAX_PATH, "%s\\PowerCapslock\\config.json", appDataPath);
-        snprintf(g_config.logPath, MAX_PATH, "%s\\PowerCapslock\\logs\\powercapslock.log", appDataPath);
+    // 设置默认路径 - 新位置: %USERPROFILE%\.PowerCapslock\config\config.json
+    char userProfilePath[MAX_PATH];
+    if (SUCCEEDED(SHGetFolderPath(NULL, CSIDL_PROFILE, NULL, 0, userProfilePath))) {
+        // 新配置文件路径
+        snprintf(g_config.configPath, MAX_PATH, "%s\\.PowerCapslock\\config\\config.json", userProfilePath);
+        // 默认日志目录和模型目录
+        snprintf(g_config.logDirPath, MAX_PATH, "%s\\.PowerCapslock\\logs", userProfilePath);
+        strncpy(g_config.modelDirPath, "models", sizeof(g_config.modelDirPath) - 1);  // 相对路径，相对于exe
+    }
+
+    // 检查新配置文件是否存在
+    bool newConfigExists = (GetFileAttributesA(g_config.configPath) != INVALID_FILE_ATTRIBUTES);
+
+    // 如果新配置不存在，尝试从旧位置迁移
+    if (!newConfigExists) {
+        char oldConfigPath[MAX_PATH];
+        char appDataPath[MAX_PATH];
+        if (SUCCEEDED(SHGetFolderPath(NULL, CSIDL_APPDATA, NULL, 0, appDataPath))) {
+            snprintf(oldConfigPath, MAX_PATH, "%s\\PowerCapslock\\config.json", appDataPath);
+            bool oldConfigExists = (GetFileAttributesA(oldConfigPath) != INVALID_FILE_ATTRIBUTES);
+
+            if (oldConfigExists) {
+                // 旧配置存在，创建新目录
+                char* lastSlash = strrchr(g_config.configPath, '\\');
+                if (lastSlash != NULL) {
+                    *lastSlash = '\0';
+                    CreateDirectoryRecursive(g_config.configPath);
+                    *lastSlash = '\\';
+
+                    // 复制旧配置到新位置
+                    if (CopyFileA(oldConfigPath, g_config.configPath, FALSE)) {
+                        LOG_INFO("Config migrated from %s to %s", oldConfigPath, g_config.configPath);
+                    } else {
+                        LOG_WARN("Failed to migrate config from old location to new location");
+                    }
+                }
+            }
+        }
+    }
+
+    // 生成日志文件完整路径（按日期命名）
+    if (g_config.logDirPath[0] != '\0') {
+        time_t now = time(NULL);
+        struct tm* t = localtime(&now);
+        char dateStr[32];
+        strftime(dateStr, sizeof(dateStr), "%Y%m%d", t);
+        snprintf(g_config.logPath, MAX_PATH, "%s\\powercapslock_%s.log", g_config.logDirPath, dateStr);
     }
 
     ConfigLoadDefaults();
@@ -438,12 +504,44 @@ bool ConfigLoad(const char* path) {
     // voice_input.asked
     ExtractJsonBool(content, "asked", &g_config.voiceInputAsked);
 
+    // paths.log_directory
+    if (ExtractJsonString(content, "log_directory", temp, sizeof(temp))) {
+        strncpy(g_config.logDirPath, temp, sizeof(g_config.logDirPath) - 1);
+        // 重新生成日志文件完整路径（按当前日期）
+        if (g_config.logDirPath[0] != '\0') {
+            time_t now = time(NULL);
+            struct tm* t = localtime(&now);
+            char dateStr[32];
+            strftime(dateStr, sizeof(dateStr), "%Y%m%d", t);
+            snprintf(g_config.logPath, MAX_PATH, "%s\\powercapslock_%s.log", g_config.logDirPath, dateStr);
+        }
+    }
+
+    // paths.model_directory
+    if (ExtractJsonString(content, "model_directory", temp, sizeof(temp))) {
+        strncpy(g_config.modelDirPath, temp, sizeof(g_config.modelDirPath) - 1);
+    }
+
     // 解析 mappings 数组
     ParseMappings(content);
 
     free(content);
     LOG_INFO("Config loaded from: %s", configPath);
     return true;
+}
+
+// Helper: Append a string to JSON buffer with proper escaping for backslashes
+static int JsonAppendEscaped(char* buffer, int bufferSize, int offset, const char* str) {
+    while (*str != '\0' && offset < bufferSize - 2) {
+        if (*str == '\\') {
+            buffer[offset++] = '\\';
+            buffer[offset++] = '\\';
+        } else {
+            buffer[offset++] = *str;
+        }
+        str++;
+    }
+    return offset;
 }
 
 bool ConfigSave(const char* path) {
@@ -459,7 +557,9 @@ bool ConfigSave(const char* path) {
         case LOG_LEVEL_ERROR: levelStr = "ERROR"; break;
     }
 
-    snprintf(content, sizeof(content),
+    // Write header
+    int offset = 0;
+    offset += snprintf(content + offset, sizeof(content) - offset,
         "{\n"
         "    \"version\": \"1.0\",\n"
         "    \"modifier\": {\n"
@@ -467,27 +567,34 @@ bool ConfigSave(const char* path) {
         "        \"suppress_original\": %s,\n"
         "        \"control_led\": %s\n"
         "    },\n"
-        "    \"mappings\": [\n"
-        "        {\"from\": \"H\", \"to\": \"LEFT\"},\n"
-        "        {\"from\": \"J\", \"to\": \"DOWN\"},\n"
-        "        {\"from\": \"K\", \"to\": \"UP\"},\n"
-        "        {\"from\": \"L\", \"to\": \"RIGHT\"},\n"
-        "        {\"from\": \"I\", \"to\": \"END\"},\n"
-        "        {\"from\": \"O\", \"to\": \"HOME\"},\n"
-        "        {\"from\": \"U\", \"to\": \"PAGEDOWN\"},\n"
-        "        {\"from\": \"P\", \"to\": \"PAGEUP\"},\n"
-        "        {\"from\": \"1\", \"to\": \"F1\"},\n"
-        "        {\"from\": \"2\", \"to\": \"F2\"},\n"
-        "        {\"from\": \"3\", \"to\": \"F3\"},\n"
-        "        {\"from\": \"4\", \"to\": \"F4\"},\n"
-        "        {\"from\": \"5\", \"to\": \"F5\"},\n"
-        "        {\"from\": \"6\", \"to\": \"F6\"},\n"
-        "        {\"from\": \"7\", \"to\": \"F7\"},\n"
-        "        {\"from\": \"8\", \"to\": \"F8\"},\n"
-        "        {\"from\": \"9\", \"to\": \"F9\"},\n"
-        "        {\"from\": \"0\", \"to\": \"F10\"},\n"
-        "        {\"from\": \"MINUS\", \"to\": \"F11\"},\n"
-        "        {\"from\": \"EQUAL\", \"to\": \"F12\"}\n"
+        "    \"mappings\": [\n",
+        g_config.modifierKey,
+        g_config.suppressOriginal ? "true" : "false",
+        g_config.controlLed ? "true" : "false"
+    );
+
+    // Get all current mappings and write them dynamically
+    int mappingCount;
+    const KeyMapping* mappings = KeymapGetAll(&mappingCount);
+
+    for (int i = 0; i < mappingCount; i++) {
+        const char* fromName = ScanCodeToName(mappings[i].scanCode);
+        const char* toName = VkCodeToName(mappings[i].targetVk);
+        if (fromName != NULL && toName != NULL) {
+            if (i == 0) {
+                // First item, no leading comma
+                offset += snprintf(content + offset, sizeof(content) - offset,
+                    "        {\"from\": \"%s\", \"to\": \"%s\"}", fromName, toName);
+            } else {
+                offset += snprintf(content + offset, sizeof(content) - offset,
+                    ",\n        {\"from\": \"%s\", \"to\": \"%s\"}", fromName, toName);
+            }
+        }
+    }
+
+    // Write closing bracket for mappings and continue with rest
+    offset += snprintf(content + offset, sizeof(content) - offset,
+        "\n"
         "    ],\n"
         "    \"options\": {\n"
         "        \"start_enabled\": %s,\n"
@@ -495,22 +602,45 @@ bool ConfigSave(const char* path) {
         "        \"log_to_file\": %s,\n"
         "        \"keyboard_layout\": \"%s\"\n"
         "    },\n"
-        "    \"voice_input\": {\n"
-        "        \"enabled\": %s,\n"
-        "        \"asked\": %s\n"
-        "    }\n"
-        "}\n",
-        g_config.modifierKey,
-        g_config.suppressOriginal ? "true" : "false",
-        g_config.controlLed ? "true" : "false",
+        "    \"paths\": {\n"
+        "        \"log_directory\": \"",
         g_config.startEnabled ? "true" : "false",
         levelStr,
         g_config.logToFile ? "true" : "false",
         g_config.keyboardLayout
     );
 
+    // Escape backslashes in log directory path for valid JSON
+    offset = JsonAppendEscaped(content, sizeof(content), offset, g_config.logDirPath);
+
+    // Add separator for model directory
+    offset += snprintf(content + offset, sizeof(content) - offset,
+        "\",\n"
+        "        \"model_directory\": \"");
+
+    // Escape backslashes in model directory path for valid JSON
+    offset = JsonAppendEscaped(content, sizeof(content), offset, g_config.modelDirPath);
+
+    // Add the closing sections
+    offset += snprintf(content + offset, sizeof(content) - offset,
+        "\"\n"
+        "    },\n"
+        "    \"voice_input\": {\n"
+        "        \"enabled\": %s,\n"
+        "        \"asked\": %s\n"
+        "    }\n"
+        "}\n",
+        g_config.voiceInputEnabled ? "true" : "false",
+        g_config.voiceInputAsked ? "true" : "false"
+    );
+
+    if (offset >= sizeof(content)) {
+        LOG_ERROR("Config buffer overflow: too many mappings");
+        return false;
+    }
+
     if (WriteFileContent(configPath, content)) {
-        LOG_INFO("Config saved to: %s", configPath);
+        LOG_INFO("Config saved to: %s (%d mappings)", configPath, mappingCount);
         return true;
     } else {
         LOG_ERROR("Failed to save config to: %s", configPath);

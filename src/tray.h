@@ -11,6 +11,7 @@
 #define IDM_ENABLE       1001
 #define IDM_DISABLE      1002
 #define IDM_SHOW_LOG     1003
+#define IDM_CONFIGURE    1006
 #define IDM_ABOUT        1004
 #define IDM_EXIT         1005
 

@@ -91,7 +91,12 @@ void KeymapAddMapping(WORD scanCode, UINT targetVk, const char* name) {
 
     // 检查容量
     if (g_keymap.count >= g_keymap.capacity) {
-        int newCapacity = g_keymap.capacity * 2;
+        int newCapacity = g_keymap.capacity;
+        if (newCapacity == 0) {
+            newCapacity = 32; // Initial capacity if not initialized
+        } else {
+            newCapacity = g_keymap.capacity * 2;
+        }
         KeyMapping* newMappings = (KeyMapping*)realloc(g_keymap.mappings,
                                                         newCapacity * sizeof(KeyMapping));
         if (newMappings == NULL) {
