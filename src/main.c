@@ -504,6 +504,7 @@ static int RunConfigDialogTest(void) {
 
 // 向前声明
 static int RunAudioFileTest(void);
+static int RunCapsLockAHookTest(const char* outputPath);
 
 // 命令行模式枚举
 typedef enum {
@@ -512,7 +513,8 @@ typedef enum {
     CMD_MODE_CLEANUP_LOGS = 2,
     CMD_MODE_TEST_CONFIG = 3,
     CMD_MODE_TEST_CONFIG_DIALOG = 4,
-    CMD_MODE_TEST_AUDIO_FILE = 5
+    CMD_MODE_TEST_AUDIO_FILE = 5,
+    CMD_MODE_TEST_CAPSLOCK_A = 6
 } CommandMode;
 
 // 保存音频文件测试参数
@@ -854,6 +856,30 @@ static int RunAudioFileTest(void) {
 }
 
 // 解析命令行参数
+static int RunCapsLockAHookTest(const char* outputPath) {
+    g_hInstance = GetModuleHandle(NULL);
+
+    ConfigInit();
+    LoggerInit(ConfigGetLogPath());
+    LoggerSetLevel(LOG_LEVEL_DEBUG);
+    KeymapInit();
+    ConfigLoad(NULL);
+    LoggerSetLevel(LOG_LEVEL_DEBUG);
+
+    printf("========== PowerCapslock CapsLock+A Hook Test ==========\n");
+    printf("Output file: %s\n", outputPath != NULL ? outputPath : "<none>");
+    printf("Simulating slow voice startup to verify the key is intercepted before async work runs.\n");
+    fflush(stdout);
+
+    {
+        bool passed = HookRunCapsLockATest(1500, outputPath);
+        LoggerCleanup();
+        KeymapCleanup();
+        ConfigCleanup();
+        return passed ? 0 : 1;
+    }
+}
+
 static CommandMode ParseCommandLine(LPSTR lpCmdLine, char** outputPath) {
     char* args = lpCmdLine;
     CommandMode mode = CMD_MODE_NORMAL;
@@ -922,6 +948,20 @@ static CommandMode ParseCommandLine(LPSTR lpCmdLine, char** outputPath) {
             printf("Usage: --test-audio-file <mp3-file> <expected-text-file>\n");
             fflush(stdout);
             exit(1);
+        }
+        else if (strncmp(args, "--test-capslock-a", strlen("--test-capslock-a")) == 0 &&
+                (args[strlen("--test-capslock-a")] == ' ' || args[strlen("--test-capslock-a")] == '\0')) {
+            mode = CMD_MODE_TEST_CAPSLOCK_A;
+            args += strlen("--test-capslock-a");
+            while (*args == ' ' || *args == '\t') args++;
+
+            if (*args != '\0') {
+                *outputPath = args;
+                break;
+            } else {
+                *outputPath = NULL;
+                break;
+            }
         }
         else if (strncmp(args, "--cleanup-logs", strlen("--cleanup-logs")) == 0 &&
                 (args[strlen("--cleanup-logs")] == ' ' || args[strlen("--cleanup-logs")] == '\0')) {
@@ -1004,6 +1044,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             ReleaseMutex(hMutex);
             CloseHandle(hMutex);
             return RunAudioFileTest();
+        case CMD_MODE_TEST_CAPSLOCK_A:
+            ReleaseMutex(hMutex);
+            CloseHandle(hMutex);
+            return RunCapsLockAHookTest(outputPath);
         case CMD_MODE_NORMAL:
         default:
             break;
@@ -1027,6 +1071,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     // 消息循环
     MSG msg;
     while (GetMessage(&msg, NULL, 0, 0)) {
+        if (HookHandleMessage(&msg)) {
+            continue;
+        }
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }

@@ -33,8 +33,8 @@ IDI_ICON_DISABLED  ICON    "icon_disabled.ico"
 
 // 版本信息
 1 VERSIONINFO
-FILEVERSION     1,0,0,0
-PRODUCTVERSION  1,0,0,0
+FILEVERSION     0,1,2,0
+PRODUCTVERSION  0,1,2,0
 FILEFLAGSMASK   0x3f
 FILEFLAGS       0x0
 FILEOS          VOS_NT_WINDOWS32
@@ -46,13 +46,13 @@ BEGIN
         BLOCK "080404b0"
         BEGIN
             VALUE "CompanyName", "John"
-            VALUE "FileDescription", "JohnHotKeyMap - Windows Keyboard Hotkey Mapping Tool"
-            VALUE "FileVersion", "1.0.0.0"
-            VALUE "InternalName", "JohnHotKeyMap"
+            VALUE "FileDescription", "PowerCapslock - Windows keyboard remapping and speech input tool"
+            VALUE "FileVersion", "0.1.2.preview"
+            VALUE "InternalName", "PowerCapslock"
             VALUE "LegalCopyright", "Copyright (C) 2024 John. MIT License."
-            VALUE "OriginalFilename", "hotkeymap.exe"
-            VALUE "ProductName", "JohnHotKeyMap"
-            VALUE "ProductVersion", "1.0.0.0"
+            VALUE "OriginalFilename", "powercapslock.exe"
+            VALUE "ProductName", "PowerCapslock"
+            VALUE "ProductVersion", "0.1.2.preview"
         END
     END
     BLOCK "VarFileInfo"
