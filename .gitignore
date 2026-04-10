@@ -39,3 +39,5 @@ lib/
 scripts/build.bat
 scripts/install.bat
 scripts/uninstall.bat
+
+test/
