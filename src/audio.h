@@ -34,4 +34,10 @@ bool AudioStopRecording(float** samples, int* numSamples);
  */
 bool AudioIsRecording(void);
 
+/**
+ * 采集音频数据（需要在录音期间定期调用）
+ * @return 采集的样本数，失败返回 -1
+ */
+int AudioCaptureData(void);
+
 #endif // AUDIO_H

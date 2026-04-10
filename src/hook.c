@@ -241,6 +241,9 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
                 LOG_ERROR("[语音输入] 停止录音失败");
             }
             LOG_INFO("[语音输入] 语音输入结束");
+        } else if (voiceKeyDown) {
+            // 按键持续按下时，持续采集音频数据
+            AudioCaptureData();
         }
         return 1;  // 拦截
     }

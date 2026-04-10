@@ -5,7 +5,6 @@
 #include <stdarg.h>
 #include <time.h>
 #include <windows.h>
-#include <locale.h>
 
 // 日志系统状态
 typedef struct {
@@ -14,6 +13,7 @@ typedef struct {
     CRITICAL_SECTION cs;    // 临界区，保证线程安全
     BOOL initialized;       // 是否已初始化
     char logDir[MAX_PATH];  // 日志目录路径
+    time_t lastFlush;       // 上次刷新时间
 } LoggerState;
 
 static LoggerState g_logger = {0};
@@ -31,8 +31,9 @@ int LoggerInit(const char* logPath) {
         return 0;  // 已经初始化
     }
 
-    // 设置 locale 为 UTF-8
-    setlocale(LC_ALL, ".UTF-8");
+    // 设置控制台代码页为 GBK (936)
+    SetConsoleOutputCP(936);
+    SetConsoleCP(936);
 
     // 初始化临界区
     InitializeCriticalSection(&g_logger.cs);
@@ -40,6 +41,7 @@ int LoggerInit(const char* logPath) {
     // 设置默认级别
     g_logger.level = LOG_LEVEL_INFO;
     g_logger.logDir[0] = '\0';
+    g_logger.lastFlush = 0;
 
     // 打开日志文件
     if (logPath != NULL) {
@@ -53,20 +55,11 @@ int LoggerInit(const char* logPath) {
             CreateDirectoryA(dirPath, NULL);
         }
 
-        // 检查文件是否存在，用于决定是否写入 BOM
-        BOOL fileExists = (GetFileAttributesA(logPath) != INVALID_FILE_ATTRIBUTES);
-
-        // 以二进制模式打开，写入 UTF-8
-        g_logger.logFile = fopen(logPath, "ab");
+        // 以文本模式打开，使用 GBK 编码
+        g_logger.logFile = fopen(logPath, "a");
         if (g_logger.logFile == NULL) {
             // 文件打开失败，只使用控制台输出
             g_logger.logFile = NULL;
-        } else {
-            // 如果是新文件，写入 UTF-8 BOM
-            if (!fileExists) {
-                unsigned char bom[] = {0xEF, 0xBB, 0xBF};
-                fwrite(bom, 1, 3, g_logger.logFile);
-            }
         }
     }
 
@@ -102,6 +95,44 @@ LogLevel LoggerGetLevel(void) {
     return g_logger.level;
 }
 
+// 将 UTF-8 字符串转换为 GBK
+static char* Utf8ToGbk(const char* utf8Str) {
+    if (utf8Str == NULL) {
+        return NULL;
+    }
+
+    // 先转换为宽字符
+    int wideLen = MultiByteToWideChar(CP_UTF8, 0, utf8Str, -1, NULL, 0);
+    if (wideLen <= 0) {
+        return NULL;
+    }
+
+    wchar_t* wideStr = (wchar_t*)malloc(wideLen * sizeof(wchar_t));
+    if (wideStr == NULL) {
+        return NULL;
+    }
+
+    MultiByteToWideChar(CP_UTF8, 0, utf8Str, -1, wideStr, wideLen);
+
+    // 再转换为 GBK
+    int gbkLen = WideCharToMultiByte(936, 0, wideStr, -1, NULL, 0, NULL, NULL);
+    if (gbkLen <= 0) {
+        free(wideStr);
+        return NULL;
+    }
+
+    char* gbkStr = (char*)malloc(gbkLen);
+    if (gbkStr == NULL) {
+        free(wideStr);
+        return NULL;
+    }
+
+    WideCharToMultiByte(936, 0, wideStr, -1, gbkStr, gbkLen, NULL, NULL);
+    free(wideStr);
+
+    return gbkStr;
+}
+
 void LogMessage(LogLevel level, const char* format, ...) {
     if (!g_logger.initialized) {
         return;
@@ -121,24 +152,37 @@ void LogMessage(LogLevel level, const char* format, ...) {
     strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S", t);
 
     // 格式化用户消息
-    char message[1024];
+    char message[2048];
     va_list args;
     va_start(args, format);
     vsnprintf(message, sizeof(message), format, args);
     va_end(args);
 
     // 构建完整日志行
-    char logLine[2048];
+    char logLine[4096];
     snprintf(logLine, sizeof(logLine), "[%s] [%s] %s\n",
              timeStr, levelNames[level], message);
 
-    // 输出到控制台
+    // 输出到控制台（使用 GBK）
     printf("%s", logLine);
 
     // 输出到文件
     if (g_logger.logFile != NULL) {
-        fprintf(g_logger.logFile, "%s", logLine);
-        fflush(g_logger.logFile);
+        // 转换为 GBK 写入文件
+        char* gbkLine = Utf8ToGbk(logLine);
+        if (gbkLine != NULL) {
+            fprintf(g_logger.logFile, "%s", gbkLine);
+            free(gbkLine);
+        } else {
+            // 转换失败，直接写入
+            fprintf(g_logger.logFile, "%s", logLine);
+        }
+
+        // 每秒刷新一次
+        if (now - g_logger.lastFlush >= 1) {
+            fflush(g_logger.logFile);
+            g_logger.lastFlush = now;
+        }
     }
 
     LeaveCriticalSection(&g_logger.cs);

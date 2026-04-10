@@ -36,26 +36,30 @@ static int g_bufferSize = 0;        // 当前缓冲区大小（样本数）
 static int g_bufferCapacity = 0;    // 缓冲区容量（样本数）
 static bool g_isRecording = false;
 
+// 设备格式信息（用于重采样）
+static int g_deviceSampleRate = 48000;
+static int g_deviceChannels = 2;
+
 // 扩展缓冲区
 static bool ExpandBuffer(int requiredSize) {
     if (requiredSize <= g_bufferCapacity) {
         return true;
     }
 
-    int newCapacity = g_bufferCapacity == 0 ? TARGET_SAMPLE_RATE : g_bufferCapacity * 2;
+    int newCapacity = g_bufferCapacity == 0 ? TARGET_SAMPLE_RATE * 10 : g_bufferCapacity * 2;
     while (newCapacity < requiredSize) {
         newCapacity *= 2;
     }
 
     float* newBuffer = (float*)realloc(g_recordBuffer, newCapacity * sizeof(float));
     if (newBuffer == NULL) {
-        LOG_ERROR("音频缓冲区分配失败");
+        LOG_ERROR("[音频] 缓冲区分配失败");
         return false;
     }
 
     g_recordBuffer = newBuffer;
     g_bufferCapacity = newCapacity;
-    LOG_DEBUG("音频缓冲区扩展至 %d 样本", newCapacity);
+    LOG_DEBUG("[音频] 缓冲区扩展至 %d 样本", newCapacity);
     return true;
 }
 
@@ -65,7 +69,7 @@ bool AudioInit(void) {
     // 初始化 COM
     hr = CoInitialize(NULL);
     if (FAILED(hr)) {
-        LOG_ERROR("COM 初始化失败: 0x%08X", hr);
+        LOG_ERROR("[音频] COM 初始化失败: 0x%08X", hr);
         return false;
     }
 
@@ -79,7 +83,7 @@ bool AudioInit(void) {
     );
 
     if (FAILED(hr)) {
-        LOG_ERROR("创建设备枚举器失败: 0x%08X", hr);
+        LOG_ERROR("[音频] 创建设备枚举器失败: 0x%08X", hr);
         CoUninitialize();
         return false;
     }
@@ -93,7 +97,7 @@ bool AudioInit(void) {
     );
 
     if (FAILED(hr)) {
-        LOG_ERROR("获取默认音频输入设备失败: 0x%08X", hr);
+        LOG_ERROR("[音频] 获取默认音频输入设备失败: 0x%08X", hr);
         g_enumerator->lpVtbl->Release(g_enumerator);
         g_enumerator = NULL;
         CoUninitialize();
@@ -103,7 +107,7 @@ bool AudioInit(void) {
     // 创建事件
     g_event = CreateEvent(NULL, FALSE, FALSE, NULL);
     if (g_event == NULL) {
-        LOG_ERROR("创建事件失败");
+        LOG_ERROR("[音频] 创建事件失败");
         g_device->lpVtbl->Release(g_device);
         g_device = NULL;
         g_enumerator->lpVtbl->Release(g_enumerator);
@@ -112,7 +116,7 @@ bool AudioInit(void) {
         return false;
     }
 
-    LOG_INFO("音频模块初始化成功");
+    LOG_INFO("[音频] 模块初始化成功");
     return true;
 }
 
@@ -155,17 +159,17 @@ void AudioCleanup(void) {
     g_bufferCapacity = 0;
 
     CoUninitialize();
-    LOG_DEBUG("音频资源已清理");
+    LOG_DEBUG("[音频] 资源已清理");
 }
 
 bool AudioStartRecording(void) {
     if (g_device == NULL) {
-        LOG_ERROR("音频设备未初始化");
+        LOG_ERROR("[音频] 设备未初始化");
         return false;
     }
 
     if (g_isRecording) {
-        LOG_WARN("已在录音中");
+        LOG_WARN("[音频] 已在录音中");
         return true;
     }
 
@@ -181,7 +185,7 @@ bool AudioStartRecording(void) {
     );
 
     if (FAILED(hr)) {
-        LOG_ERROR("激活音频客户端失败: 0x%08X", hr);
+        LOG_ERROR("[音频] 激活音频客户端失败: 0x%08X", hr);
         return false;
     }
 
@@ -189,15 +193,19 @@ bool AudioStartRecording(void) {
     WAVEFORMATEX* deviceFormat = NULL;
     hr = g_audioClient->lpVtbl->GetMixFormat(g_audioClient, &deviceFormat);
     if (FAILED(hr)) {
-        LOG_ERROR("获取设备格式失败: 0x%08X", hr);
+        LOG_ERROR("[音频] 获取设备格式失败: 0x%08X", hr);
         g_audioClient->lpVtbl->Release(g_audioClient);
         g_audioClient = NULL;
         return false;
     }
 
-    LOG_DEBUG("设备格式: %d Hz, %d 通道, %d 位",
-              deviceFormat->nSamplesPerSec,
-              deviceFormat->nChannels,
+    // 保存设备格式信息
+    g_deviceSampleRate = deviceFormat->nSamplesPerSec;
+    g_deviceChannels = deviceFormat->nChannels;
+
+    LOG_INFO("[音频] 设备格式: %d Hz, %d 通道, %d 位",
+              g_deviceSampleRate,
+              g_deviceChannels,
               deviceFormat->wBitsPerSample);
 
     // 初始化音频客户端
@@ -215,7 +223,7 @@ bool AudioStartRecording(void) {
     );
 
     if (FAILED(hr)) {
-        LOG_ERROR("初始化音频客户端失败: 0x%08X", hr);
+        LOG_ERROR("[音频] 初始化音频客户端失败: 0x%08X", hr);
         CoTaskMemFree(deviceFormat);
         g_audioClient->lpVtbl->Release(g_audioClient);
         g_audioClient = NULL;
@@ -225,7 +233,7 @@ bool AudioStartRecording(void) {
     // 设置事件回调
     hr = g_audioClient->lpVtbl->SetEventHandle(g_audioClient, g_event);
     if (FAILED(hr)) {
-        LOG_ERROR("设置事件句柄失败: 0x%08X", hr);
+        LOG_ERROR("[音频] 设置事件句柄失败: 0x%08X", hr);
         CoTaskMemFree(deviceFormat);
         g_audioClient->lpVtbl->Release(g_audioClient);
         g_audioClient = NULL;
@@ -240,7 +248,7 @@ bool AudioStartRecording(void) {
     );
 
     if (FAILED(hr)) {
-        LOG_ERROR("获取捕获客户端失败: 0x%08X", hr);
+        LOG_ERROR("[音频] 获取捕获客户端失败: 0x%08X", hr);
         CoTaskMemFree(deviceFormat);
         g_audioClient->lpVtbl->Release(g_audioClient);
         g_audioClient = NULL;
@@ -250,7 +258,7 @@ bool AudioStartRecording(void) {
     // 开始录音
     hr = g_audioClient->lpVtbl->Start(g_audioClient);
     if (FAILED(hr)) {
-        LOG_ERROR("开始录音失败: 0x%08X", hr);
+        LOG_ERROR("[音频] 开始录音失败: 0x%08X", hr);
         g_captureClient->lpVtbl->Release(g_captureClient);
         g_captureClient = NULL;
         CoTaskMemFree(deviceFormat);
@@ -259,47 +267,42 @@ bool AudioStartRecording(void) {
         return false;
     }
 
-    // 保存设备格式信息用于后续转换
-    // 简化处理：假设设备格式可以直接使用
-    // 实际应用中可能需要使用重采样库
-
     CoTaskMemFree(deviceFormat);
 
     // 重置缓冲区
     g_bufferSize = 0;
 
     g_isRecording = true;
-    LOG_INFO("开始录音");
+    LOG_INFO("[音频] 开始录音");
     return true;
 }
 
-bool AudioStopRecording(float** samples, int* numSamples) {
-    if (!g_isRecording) {
-        LOG_WARN("未在录音中");
-        return false;
+// 采集音频数据（从 WASAPI 缓冲区读取数据）
+int AudioCaptureData(void) {
+    if (!g_isRecording || g_captureClient == NULL) {
+        return -1;
     }
-
-    g_isRecording = false;
 
     HRESULT hr;
+    int totalCaptured = 0;
 
-    // 停止录音
-    hr = g_audioClient->lpVtbl->Stop(g_audioClient);
-    if (FAILED(hr)) {
-        LOG_WARN("停止录音失败: 0x%08X", hr);
+    // 等待音频数据（非阻塞，超时 0）
+    DWORD waitResult = WaitForSingleObject(g_event, 0);
+    if (waitResult != WAIT_OBJECT_0) {
+        return 0;  // 没有数据
     }
 
-    // 读取剩余数据
+    // 读取所有可用的数据包
     UINT32 packetLength;
-    BYTE* data;
-    UINT32 numFramesAvailable;
-    DWORD flags;
-
     while (true) {
         hr = g_captureClient->lpVtbl->GetNextPacketSize(g_captureClient, &packetLength);
         if (FAILED(hr) || packetLength == 0) {
             break;
         }
+
+        BYTE* data;
+        UINT32 numFramesAvailable;
+        DWORD flags;
 
         hr = g_captureClient->lpVtbl->GetBuffer(
             g_captureClient,
@@ -316,16 +319,57 @@ bool AudioStopRecording(float** samples, int* numSamples) {
                 break;
             }
 
-            // 复制数据（假设是 float 格式）
-            // 注意：实际设备格式可能不同，需要重采样
+            // 处理音频数据
             float* floatData = (float*)data;
             for (UINT32 i = 0; i < numFramesAvailable; i++) {
-                // 简化：取第一个通道
-                g_recordBuffer[g_bufferSize++] = floatData[i];
+                // 混合多声道为单声道
+                float sample = 0;
+                for (int ch = 0; ch < g_deviceChannels; ch++) {
+                    sample += floatData[i * g_deviceChannels + ch];
+                }
+                sample /= g_deviceChannels;
+
+                // 重采样到 16kHz（简单线性插值）
+                static float resampleIndex = 0;
+                static float lastSample = 0;
+                float ratio = (float)g_deviceSampleRate / TARGET_SAMPLE_RATE;
+
+                while (resampleIndex < 1.0f) {
+                    float interpolated = lastSample * (1.0f - resampleIndex) + sample * resampleIndex;
+                    if (g_bufferSize < g_bufferCapacity) {
+                        g_recordBuffer[g_bufferSize++] = interpolated;
+                        totalCaptured++;
+                    }
+                    resampleIndex += ratio;
+                }
+                resampleIndex -= 1.0f;
+                lastSample = sample;
             }
 
             g_captureClient->lpVtbl->ReleaseBuffer(g_captureClient, numFramesAvailable);
         }
+    }
+
+    return totalCaptured;
+}
+
+bool AudioStopRecording(float** samples, int* numSamples) {
+    if (!g_isRecording) {
+        LOG_WARN("[音频] 未在录音中");
+        return false;
+    }
+
+    g_isRecording = false;
+
+    // 最后一次采集剩余数据
+    AudioCaptureData();
+
+    HRESULT hr;
+
+    // 停止录音
+    hr = g_audioClient->lpVtbl->Stop(g_audioClient);
+    if (FAILED(hr)) {
+        LOG_WARN("[音频] 停止录音失败: 0x%08X", hr);
     }
 
     // 清理资源
@@ -334,7 +378,7 @@ bool AudioStopRecording(float** samples, int* numSamples) {
     g_audioClient->lpVtbl->Release(g_audioClient);
     g_audioClient = NULL;
 
-    LOG_INFO("录音结束，共 %d 样本 (%.2f 秒)", g_bufferSize, (float)g_bufferSize / TARGET_SAMPLE_RATE);
+    LOG_INFO("[音频] 录音结束，共 %d 样本 (%.2f 秒)", g_bufferSize, (float)g_bufferSize / TARGET_SAMPLE_RATE);
 
     // 返回结果
     if (samples != NULL && numSamples != NULL) {
