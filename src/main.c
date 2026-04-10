@@ -6,6 +6,7 @@
 #include "keyboard_layout.h"
 #include "voice.h"
 #include "audio.h"
+#include "voice_prompt.h"
 #include "config_dialog.h"
 #include <windows.h>
 #include <stdio.h>
@@ -149,6 +150,9 @@ static BOOL InitializeModules(void) {
         if (AudioInit()) {
             LOG_INFO("Audio module initialized successfully");
 
+            // 初始化语音提示窗口模块
+            VoicePromptInit();
+
             // 初始化语音识别模块
             char modelDir[MAX_PATH];
             GetModuleFileNameA(NULL, modelDir, MAX_PATH);
@@ -199,6 +203,9 @@ static void CleanupModules(void) {
 
     // 清理语音识别模块
     VoiceCleanup();
+
+    // 清理语音提示窗口模块
+    VoicePromptCleanup();
 
     // 清理音频模块
     AudioCleanup();

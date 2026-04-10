@@ -19,6 +19,7 @@ set(SOURCES
     src/keyboard_layout.c
     src/voice.c
     src/audio.c
+    src/voice_prompt.c
     src/config_dialog.c
     resources/resource.rc
 )
@@ -33,6 +34,7 @@ set(HEADERS
     src/keyboard_layout.h
     src/voice.h
     src/audio.h
+    src/voice_prompt.h
     src/config_dialog.h
 )
 

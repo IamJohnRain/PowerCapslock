@@ -3,6 +3,7 @@
 #include "logger.h"
 #include "voice.h"
 #include "audio.h"
+#include "voice_prompt.h"
 #include <stdio.h>
 
 // 全局状态
@@ -154,11 +155,16 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
 
             // 开始录音
             if (AudioStartRecording()) {
+                // 显示语音输入提示窗口
+                VoicePromptShow();
                 LOG_DEBUG("语音输入开始录音");
             }
         }
         else if (isKeyUp && voiceKeyDown) {
             voiceKeyDown = false;
+
+            // 隐藏语音输入提示窗口
+            VoicePromptHide();
 
             // 停止录音并识别
             float* samples = NULL;
