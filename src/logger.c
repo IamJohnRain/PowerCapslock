@@ -5,6 +5,7 @@
 #include <stdarg.h>
 #include <time.h>
 #include <windows.h>
+#include <locale.h>
 
 // 日志系统状态
 typedef struct {
@@ -30,6 +31,9 @@ int LoggerInit(const char* logPath) {
         return 0;  // 已经初始化
     }
 
+    // 设置 locale 为 UTF-8
+    setlocale(LC_ALL, ".UTF-8");
+
     // 初始化临界区
     InitializeCriticalSection(&g_logger.cs);
 
@@ -49,10 +53,20 @@ int LoggerInit(const char* logPath) {
             CreateDirectoryA(dirPath, NULL);
         }
 
-        g_logger.logFile = fopen(logPath, "a");
+        // 检查文件是否存在，用于决定是否写入 BOM
+        BOOL fileExists = (GetFileAttributesA(logPath) != INVALID_FILE_ATTRIBUTES);
+
+        // 以二进制模式打开，写入 UTF-8
+        g_logger.logFile = fopen(logPath, "ab");
         if (g_logger.logFile == NULL) {
             // 文件打开失败，只使用控制台输出
             g_logger.logFile = NULL;
+        } else {
+            // 如果是新文件，写入 UTF-8 BOM
+            if (!fileExists) {
+                unsigned char bom[] = {0xEF, 0xBB, 0xBF};
+                fwrite(bom, 1, 3, g_logger.logFile);
+            }
         }
     }
 

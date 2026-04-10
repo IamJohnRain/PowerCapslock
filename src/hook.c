@@ -138,12 +138,16 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
     // A 键扫描码是 0x1E
     if (scanCode == 0x1E) {
         static bool voiceKeyDown = false;
+        static DWORD voiceStartTime = 0;
 
         if (isKeyDown && !voiceKeyDown) {
             voiceKeyDown = true;
+            voiceStartTime = GetTickCount();
+            LOG_INFO("[语音输入] CapsLock+A 按下，开始语音输入");
 
             // 检查模型是否加载
             if (!VoiceIsModelLoaded()) {
+                LOG_WARN("[语音输入] 模型未加载，无法进行语音识别");
                 MessageBoxW(NULL,
                     L"语音识别模型未加载。\n\n"
                     L"请将模型文件放入 models 目录后重启程序。\n"
@@ -154,30 +158,42 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
             }
 
             // 开始录音
+            LOG_INFO("[语音输入] 开始录音...");
             if (AudioStartRecording()) {
                 // 显示语音输入提示窗口
                 VoicePromptShow();
-                LOG_DEBUG("语音输入开始录音");
+                LOG_INFO("[语音输入] 提示窗口已显示，正在录音...");
+            } else {
+                LOG_ERROR("[语音输入] 录音启动失败");
             }
         }
         else if (isKeyUp && voiceKeyDown) {
             voiceKeyDown = false;
+            DWORD voiceEndTime = GetTickCount();
+            DWORD duration = voiceEndTime - voiceStartTime;
+            LOG_INFO("[语音输入] CapsLock+A 释放，录音时长: %lu 毫秒", duration);
 
             // 隐藏语音输入提示窗口
             VoicePromptHide();
+            LOG_INFO("[语音输入] 提示窗口已隐藏");
 
             // 停止录音并识别
             float* samples = NULL;
             int numSamples = 0;
+            LOG_INFO("[语音输入] 停止录音，开始识别...");
             if (AudioStopRecording(&samples, &numSamples)) {
+                LOG_INFO("[语音输入] 录音样本数: %d, 时长: %.2f 秒", numSamples, (float)numSamples / 16000.0f);
                 char* text = VoiceRecognize(samples, numSamples);
                 if (text != NULL) {
+                    LOG_INFO("[语音输入] 识别结果: %s", text);
+
                     // 将 UTF-8 转换为宽字符（UTF-16）
                     int textLen = MultiByteToWideChar(CP_UTF8, 0, text, -1, NULL, 0);
                     if (textLen > 0) {
                         wchar_t* wtext = (wchar_t*)malloc(textLen * sizeof(wchar_t));
                         if (wtext != NULL) {
                             MultiByteToWideChar(CP_UTF8, 0, text, -1, wtext, textLen);
+                            LOG_INFO("[语音输入] 宽字符长度: %d", textLen - 1);
 
                             // 模拟键盘输入识别结果（使用宽字符）
                             INPUT* inputs = NULL;
@@ -207,20 +223,24 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
                                     inputCount++;
                                 }
 
-                                SendInput(inputCount, inputs, sizeof(INPUT));
+                                UINT sent = SendInput(inputCount, inputs, sizeof(INPUT));
+                                LOG_INFO("[语音输入] SendInput 发送 %u 个输入事件", sent);
                                 free(inputs);
-                                LOG_DEBUG("语音识别结果已输入: %s", text);
                             }
                             free(wtext);
                         }
                     }
                     free(text);
+                } else {
+                    LOG_WARN("[语音输入] 识别结果为空");
                 }
                 if (samples != NULL) {
                     free(samples);
                 }
+            } else {
+                LOG_ERROR("[语音输入] 停止录音失败");
             }
-            LOG_DEBUG("语音输入结束");
+            LOG_INFO("[语音输入] 语音输入结束");
         }
         return 1;  // 拦截
     }
