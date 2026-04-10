@@ -2,14 +2,12 @@
 #include "logger.h"
 #include <windows.h>
 
-// 窗口类名和标题
-static const wchar_t* WINDOW_CLASS = L"PowerCapslockVoicePrompt";
-static const wchar_t* WINDOW_TITLE = L"语音输入";
+// 窗口类名
+static const char* WINDOW_CLASS = "PowerCapslockVoicePromptClass";
 
 // 全局状态
 static HWND g_hwnd = NULL;
 static bool g_initialized = false;
-static HFONT g_hFont = NULL;
 
 // 窗口过程
 static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -22,29 +20,18 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
             RECT rect;
             GetClientRect(hwnd, &rect);
 
-            // 设置背景
-            HBRUSH hBrush = CreateSolidBrush(RGB(45, 45, 45));
+            // 设置背景色（与 Toast 一致）
+            HBRUSH hBrush = CreateSolidBrush(RGB(50, 50, 50));
             FillRect(hdc, &rect, hBrush);
             DeleteObject(hBrush);
 
-            // 绘制边框
-            HPEN hPen = CreatePen(PS_SOLID, 2, RGB(0, 120, 215));
-            SelectObject(hdc, hPen);
-            Rectangle(hdc, 0, 0, rect.right, rect.bottom);
-            DeleteObject(hPen);
-
-            // 绘制文字
+            // 设置文本颜色
             SetTextColor(hdc, RGB(255, 255, 255));
             SetBkMode(hdc, TRANSPARENT);
-            SelectObject(hdc, g_hFont);
 
-            // 计算文字位置（居中）
+            // 绘制文本（居中）
             const wchar_t* text = L"🎤 正在语音输入，请说话...";
-            SIZE textSize;
-            GetTextExtentPoint32W(hdc, text, (int)wcslen(text), &textSize);
-            int x = (rect.right - textSize.cx) / 2;
-            int y = (rect.bottom - textSize.cy) / 2;
-            TextOutW(hdc, x, y, text, (int)wcslen(text));
+            DrawTextW(hdc, text, -1, &rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
             EndPaint(hwnd, &ps);
             return 0;
@@ -65,39 +52,18 @@ bool VoicePromptInit(void) {
     }
 
     // 注册窗口类
-    WNDCLASSEXW wc = {0};
-    wc.cbSize = sizeof(WNDCLASSEXW);
-    wc.style = CS_HREDRAW | CS_VREDRAW;
+    WNDCLASSEXA wc = {0};
+    wc.cbSize = sizeof(WNDCLASSEXA);
     wc.lpfnWndProc = WindowProc;
     wc.hInstance = GetModuleHandle(NULL);
-    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
     wc.lpszClassName = WINDOW_CLASS;
 
-    if (!RegisterClassExW(&wc)) {
+    if (!RegisterClassExA(&wc)) {
         DWORD error = GetLastError();
         if (error != ERROR_CLASS_ALREADY_EXISTS) {
             LOG_ERROR("注册窗口类失败: %d", error);
             return false;
         }
-    }
-
-    // 创建字体
-    g_hFont = CreateFontW(
-        24,                        // 高度
-        0,                         // 宽度
-        0, 0,                      // 角度
-        FW_NORMAL,                 // 粗细
-        FALSE, FALSE, FALSE,       // 斜体、下划线、删除线
-        DEFAULT_CHARSET,           // 字符集
-        OUT_DEFAULT_PRECIS,        // 输出精度
-        CLIP_DEFAULT_PRECIS,       // 裁剪精度
-        DEFAULT_QUALITY,           // 质量
-        DEFAULT_PITCH | FF_DONTCARE, // 间距和字体族
-        L"Microsoft YaHei UI"      // 字体名
-    );
-
-    if (g_hFont == NULL) {
-        LOG_WARN("创建字体失败，使用默认字体");
     }
 
     g_initialized = true;
@@ -109,11 +75,6 @@ void VoicePromptCleanup(void) {
     if (g_hwnd != NULL) {
         DestroyWindow(g_hwnd);
         g_hwnd = NULL;
-    }
-
-    if (g_hFont != NULL) {
-        DeleteObject(g_hFont);
-        g_hFont = NULL;
     }
 
     g_initialized = false;
@@ -130,47 +91,63 @@ void VoicePromptShow(void) {
         return;  // 已显示
     }
 
-    // 窗口大小
-    int width = 320;
-    int height = 60;
+    // 窗口大小（与 Toast 一致）
+    int width = 350;
+    int height = 80;
 
-    // 获取屏幕大小
-    int screenWidth = GetSystemMetrics(SM_CXSCREEN);
+    // 获取屏幕工作区域
+    RECT workArea;
+    if (SystemParametersInfoW(SPI_GETWORKAREA, 0, &workArea, 0)) {
+        // 计算位置（屏幕底部居中，与 Toast 一致）
+        int x = (workArea.right - workArea.left - width) / 2;
+        int y = workArea.bottom - 100;  // 距离底部 100 像素
 
-    // 计算位置（屏幕顶部居中）
-    int x = (screenWidth - width) / 2;
-    int y = 80;  // 距离顶部一定距离
+        // 创建窗口（样式与 Toast 一致）
+        g_hwnd = CreateWindowExA(
+            WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED,
+            WINDOW_CLASS,
+            "VoicePrompt",
+            WS_POPUP | WS_BORDER,
+            x, y, width, height,
+            NULL, NULL,
+            GetModuleHandle(NULL),
+            NULL
+        );
+    } else {
+        // 备用：屏幕中央
+        int screenWidth = GetSystemMetrics(SM_CXSCREEN);
+        int screenHeight = GetSystemMetrics(SM_CYSCREEN);
+        int x = (screenWidth - width) / 2;
+        int y = (screenHeight - height) / 2;
 
-    // 创建窗口（无边框、置顶、工具窗口）
-    g_hwnd = CreateWindowExW(
-        WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED,
-        WINDOW_CLASS,
-        WINDOW_TITLE,
-        WS_POPUP,
-        x, y, width, height,
-        NULL, NULL,
-        GetModuleHandle(NULL),
-        NULL
-    );
+        g_hwnd = CreateWindowExA(
+            WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED,
+            WINDOW_CLASS,
+            "VoicePrompt",
+            WS_POPUP | WS_BORDER,
+            x, y, width, height,
+            NULL, NULL,
+            GetModuleHandle(NULL),
+            NULL
+        );
+    }
 
     if (g_hwnd == NULL) {
         LOG_ERROR("创建提示窗口失败: %d", GetLastError());
         return;
     }
 
-    // 设置窗口透明度
+    // 设置窗口透明效果（与 Toast 一致）
     SetLayeredWindowAttributes(g_hwnd, 0, 230, LWA_ALPHA);
 
     // 显示窗口
-    ShowWindow(g_hwnd, SW_SHOWNOACTIVATE);
-    UpdateWindow(g_hwnd);
+    ShowWindow(g_hwnd, SW_SHOWNA);
 
     LOG_DEBUG("语音提示窗口已显示");
 }
 
 void VoicePromptHide(void) {
     if (g_hwnd != NULL) {
-        ShowWindow(g_hwnd, SW_HIDE);
         DestroyWindow(g_hwnd);
         g_hwnd = NULL;
         LOG_DEBUG("语音提示窗口已隐藏");

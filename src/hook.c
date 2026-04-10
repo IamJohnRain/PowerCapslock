@@ -172,37 +172,47 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
             if (AudioStopRecording(&samples, &numSamples)) {
                 char* text = VoiceRecognize(samples, numSamples);
                 if (text != NULL) {
-                    // 模拟键盘输入识别结果
-                    INPUT* inputs = NULL;
-                    int inputCount = 0;
-                    int textLen = (int)strlen(text);
+                    // 将 UTF-8 转换为宽字符（UTF-16）
+                    int textLen = MultiByteToWideChar(CP_UTF8, 0, text, -1, NULL, 0);
+                    if (textLen > 0) {
+                        wchar_t* wtext = (wchar_t*)malloc(textLen * sizeof(wchar_t));
+                        if (wtext != NULL) {
+                            MultiByteToWideChar(CP_UTF8, 0, text, -1, wtext, textLen);
 
-                    // 为每个字符创建输入事件
-                    inputs = (INPUT*)malloc(textLen * 2 * sizeof(INPUT));
-                    if (inputs != NULL) {
-                        for (int i = 0; i < textLen; i++) {
-                            // 按下
-                            inputs[inputCount].type = INPUT_KEYBOARD;
-                            inputs[inputCount].ki.wVk = 0;
-                            inputs[inputCount].ki.wScan = (WORD)text[i];
-                            inputs[inputCount].ki.dwFlags = KEYEVENTF_UNICODE;
-                            inputs[inputCount].ki.time = 0;
-                            inputs[inputCount].ki.dwExtraInfo = 0;
-                            inputCount++;
+                            // 模拟键盘输入识别结果（使用宽字符）
+                            INPUT* inputs = NULL;
+                            int inputCount = 0;
+                            int charCount = textLen - 1;  // 不包括结尾的 null
 
-                            // 释放
-                            inputs[inputCount].type = INPUT_KEYBOARD;
-                            inputs[inputCount].ki.wVk = 0;
-                            inputs[inputCount].ki.wScan = (WORD)text[i];
-                            inputs[inputCount].ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
-                            inputs[inputCount].ki.time = 0;
-                            inputs[inputCount].ki.dwExtraInfo = 0;
-                            inputCount++;
+                            // 为每个字符创建输入事件
+                            inputs = (INPUT*)malloc(charCount * 2 * sizeof(INPUT));
+                            if (inputs != NULL) {
+                                for (int i = 0; i < charCount; i++) {
+                                    // 按下
+                                    inputs[inputCount].type = INPUT_KEYBOARD;
+                                    inputs[inputCount].ki.wVk = 0;
+                                    inputs[inputCount].ki.wScan = (WORD)wtext[i];
+                                    inputs[inputCount].ki.dwFlags = KEYEVENTF_UNICODE;
+                                    inputs[inputCount].ki.time = 0;
+                                    inputs[inputCount].ki.dwExtraInfo = 0;
+                                    inputCount++;
+
+                                    // 释放
+                                    inputs[inputCount].type = INPUT_KEYBOARD;
+                                    inputs[inputCount].ki.wVk = 0;
+                                    inputs[inputCount].ki.wScan = (WORD)wtext[i];
+                                    inputs[inputCount].ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
+                                    inputs[inputCount].ki.time = 0;
+                                    inputs[inputCount].ki.dwExtraInfo = 0;
+                                    inputCount++;
+                                }
+
+                                SendInput(inputCount, inputs, sizeof(INPUT));
+                                free(inputs);
+                                LOG_DEBUG("语音识别结果已输入: %s", text);
+                            }
+                            free(wtext);
                         }
-
-                        SendInput(inputCount, inputs, sizeof(INPUT));
-                        free(inputs);
-                        LOG_DEBUG("语音识别结果已输入: %s", text);
                     }
                     free(text);
                 }
