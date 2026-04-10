@@ -11,6 +11,7 @@ typedef struct {
     bool enabled;           // 是否启用
     bool capslockHeld;      // CapsLock 是否按下
     HHOOK hHook;            // 钩子句柄
+    bool voiceInputActive;  // 语音输入是否正在进行
 } HookState;
 
 static HookState g_hook = {0};
@@ -129,19 +130,18 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
         return CallNextHookEx(g_hook.hHook, nCode, wParam, lParam);
     }
 
-    // 如果 CapsLock 没按下，正常传递
-    if (!g_hook.capslockHeld) {
+    // 如果 CapsLock 没按下且语音输入未激活，正常传递
+    if (!g_hook.capslockHeld && !g_hook.voiceInputActive) {
         return CallNextHookEx(g_hook.hHook, nCode, wParam, lParam);
     }
 
     // 检测 CapsLock+A 语音输入
     // A 键扫描码是 0x1E
     if (scanCode == 0x1E) {
-        static bool voiceKeyDown = false;
         static DWORD voiceStartTime = 0;
 
-        if (isKeyDown && !voiceKeyDown) {
-            voiceKeyDown = true;
+        if (isKeyDown && !g_hook.voiceInputActive) {
+            g_hook.voiceInputActive = true;
             voiceStartTime = GetTickCount();
             LOG_INFO("[语音输入] CapsLock+A 按下，开始语音输入");
 
@@ -154,6 +154,7 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
                     L"下载地址: https://github.com/k2-fsa/sherpa-onnx/releases",
                     L"PowerCapslock - 语音输入",
                     MB_OK | MB_ICONINFORMATION);
+                g_hook.voiceInputActive = false;
                 return 1;
             }
 
@@ -165,10 +166,11 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
                 LOG_INFO("[语音输入] 提示窗口已显示，正在录音...");
             } else {
                 LOG_ERROR("[语音输入] 录音启动失败");
+                g_hook.voiceInputActive = false;
             }
         }
-        else if (isKeyUp && voiceKeyDown) {
-            voiceKeyDown = false;
+        else if (isKeyUp && g_hook.voiceInputActive) {
+            g_hook.voiceInputActive = false;
             DWORD voiceEndTime = GetTickCount();
             DWORD duration = voiceEndTime - voiceStartTime;
             LOG_INFO("[语音输入] CapsLock+A 释放，录音时长: %lu 毫秒", duration);
@@ -241,7 +243,7 @@ static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lP
                 LOG_ERROR("[语音输入] 停止录音失败");
             }
             LOG_INFO("[语音输入] 语音输入结束");
-        } else if (voiceKeyDown) {
+        } else if (g_hook.voiceInputActive && g_hook.capslockHeld) {
             // 按键持续按下时，持续采集音频数据
             AudioCaptureData();
         }
@@ -316,6 +318,7 @@ void HookSetEnabled(bool enabled) {
     g_hook.enabled = enabled;
     if (!enabled) {
         g_hook.capslockHeld = false;
+        g_hook.voiceInputActive = false;
     } else {
         // 启用时，确保CapsLock LED熄灭（小写状态）
         SetCapsLockLED(false);
