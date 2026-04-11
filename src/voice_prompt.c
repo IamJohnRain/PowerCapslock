@@ -73,57 +73,35 @@ static void DrawRoundedGradient(HDC hdc, const RECT* rect, COLORREF topColor, CO
     DeleteObject(pen);
 }
 
-static void DrawMicrophoneGlyph(HDC hdc, int centerX, int centerY) {
-    HPEN glowPen = CreatePen(PS_SOLID, 4, RGB(94, 218, 255));
-    HGDIOBJ oldPen = SelectObject(hdc, glowPen);
-    HGDIOBJ oldBrush = SelectObject(hdc, GetStockObject(HOLLOW_BRUSH));
-
-    RoundRect(hdc, centerX - 10, centerY - 20, centerX + 10, centerY + 8, 10, 10);
-    Arc(hdc, centerX - 21, centerY - 9, centerX + 21, centerY + 25, centerX - 20, centerY + 4, centerX + 20, centerY + 4);
-    MoveToEx(hdc, centerX, centerY + 22, NULL);
-    LineTo(hdc, centerX, centerY + 34);
-    MoveToEx(hdc, centerX - 14, centerY + 34, NULL);
-    LineTo(hdc, centerX + 14, centerY + 34);
-
-    SelectObject(hdc, oldBrush);
-    SelectObject(hdc, oldPen);
-    DeleteObject(glowPen);
-}
-
 static void DrawPrompt(HDC hdc, const RECT* rect) {
     RECT panel = *rect;
-    RECT badge = {panel.left + 24, panel.top + 28, panel.left + 92, panel.top + 96};
-    RECT title = {panel.left + 112, panel.top + 26, panel.right - 28, panel.top + 58};
-    RECT body = {panel.left + 112, panel.top + 62, panel.right - 28, panel.top + 88};
-    RECT hint = {panel.left + 112, panel.top + 96, panel.right - 28, panel.top + 120};
+    RECT title = {panel.left + 16, panel.top + 9, panel.right - 16, panel.top + 32};
+    RECT body = {panel.left + 16, panel.top + 32, panel.right - 16, panel.top + 56};
+    RECT hint = {0, 0, 0, 0};
 
-    DrawRoundedGradient(hdc, &panel, RGB(20, 43, 66), RGB(42, 81, 108), RGB(140, 208, 255), 24);
+    DrawRoundedGradient(hdc, &panel, RGB(20, 43, 66), RGB(42, 81, 108), RGB(140, 208, 255), 14);
 
-    HBRUSH badgeBrush = CreateSolidBrush(RGB(22, 73, 98));
-    HPEN badgePen = CreatePen(PS_SOLID, 1, RGB(125, 223, 255));
-    HGDIOBJ oldBrush = SelectObject(hdc, badgeBrush);
-    HGDIOBJ oldPen = SelectObject(hdc, badgePen);
-    RoundRect(hdc, badge.left, badge.top, badge.right, badge.bottom, 34, 34);
+    HPEN accentPen = CreatePen(PS_SOLID, 2, RGB(94, 218, 255));
+    HGDIOBJ oldPen = SelectObject(hdc, accentPen);
+    int centerX = (panel.left + panel.right) / 2;
+    MoveToEx(hdc, centerX - 34, panel.bottom - 9, NULL);
+    LineTo(hdc, centerX + 34, panel.bottom - 9);
     SelectObject(hdc, oldPen);
-    SelectObject(hdc, oldBrush);
-    DeleteObject(badgePen);
-    DeleteObject(badgeBrush);
-
-    DrawMicrophoneGlyph(hdc, badge.left + 34, badge.top + 30);
+    DeleteObject(accentPen);
 
     SetBkMode(hdc, TRANSPARENT);
 
     HGDIOBJ oldFont = SelectObject(hdc, g_titleFont);
     SetTextColor(hdc, RGB(248, 253, 255));
-    DrawTextW(hdc, L"正在听你说话", -1, &title, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    DrawTextW(hdc, L"正在听写", -1, &title, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 
     SelectObject(hdc, g_bodyFont);
     SetTextColor(hdc, RGB(214, 238, 255));
-    DrawTextW(hdc, L"说完后松开 CapsLock + A，文字会自动输入。", -1, &body, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    DrawTextW(hdc, L"松开 CapsLock + A 自动输入", -1, &body, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 
     SelectObject(hdc, g_hintFont);
     SetTextColor(hdc, RGB(157, 210, 236));
-    DrawTextW(hdc, L"离线识别中，请保持麦克风清晰。", -1, &hint, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    DrawTextW(hdc, L"", -1, &hint, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
     if (oldFont != NULL) {
         SelectObject(hdc, oldFont);
@@ -177,9 +155,9 @@ bool VoicePromptInit(void) {
         }
     }
 
-    g_titleFont = CreatePromptFont(18, FW_SEMIBOLD);
-    g_bodyFont = CreatePromptFont(11, FW_NORMAL);
-    g_hintFont = CreatePromptFont(10, FW_NORMAL);
+    g_titleFont = CreatePromptFont(12, FW_SEMIBOLD);
+    g_bodyFont = CreatePromptFont(9, FW_NORMAL);
+    g_hintFont = CreatePromptFont(8, FW_NORMAL);
 
     g_initialized = true;
     LOG_INFO("[语音提示] 模块初始化成功");
@@ -220,8 +198,8 @@ void VoicePromptShow(void) {
         return;
     }
 
-    int width = 520;
-    int height = 132;
+    int width = 260;
+    int height = 66;
     int x = 0;
     int y = 0;
 
@@ -238,12 +216,12 @@ void VoicePromptShow(void) {
     if (monitor != NULL && GetMonitorInfoW(monitor, &mi)) {
         RECT workArea = mi.rcWork;
         x = workArea.left + (workArea.right - workArea.left - width) / 2;
-        y = workArea.bottom - height - 64;
+        y = workArea.bottom - height - 48;
     } else {
         int screenWidth = GetSystemMetrics(SM_CXSCREEN);
         int screenHeight = GetSystemMetrics(SM_CYSCREEN);
         x = (screenWidth - width) / 2;
-        y = screenHeight - height - 96;
+        y = screenHeight - height - 72;
     }
 
     LOG_INFO("[语音提示] 创建窗口位置: (%d, %d), 大小: %dx%d", x, y, width, height);
@@ -267,7 +245,7 @@ void VoicePromptShow(void) {
         return;
     }
 
-    HRGN region = CreateRoundRectRgn(0, 0, width + 1, height + 1, 26, 26);
+    HRGN region = CreateRoundRectRgn(0, 0, width + 1, height + 1, 16, 16);
     if (region != NULL && !SetWindowRgn(g_hwnd, region, TRUE)) {
         DeleteObject(region);
     }

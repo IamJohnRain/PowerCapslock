@@ -5,6 +5,7 @@
 #include "config_dialog.h"
 #include <shellapi.h>
 #include <stdio.h>
+#include <wchar.h>
 #include <windowsx.h>
 
 // 全局提示框窗口类名
@@ -12,6 +13,10 @@ static const char* TOAST_WINDOW_CLASS = "JohnHotKeyMapToastClass";
 
 // 全局提示框窗口句柄
 static HWND g_toastWindow = NULL;
+static HFONT g_toastTitleFont = NULL;
+static HFONT g_toastMessageFont = NULL;
+static wchar_t g_toastTitle[64] = L"PowerCapslock";
+static wchar_t g_toastMessage[256] = L"";
 
 // 托盘状态
 typedef struct {
@@ -276,6 +281,85 @@ HWND TrayGetWindow(void) {
     return g_tray.hWnd;
 }
 
+static HFONT CreateToastFont(int pointSize, int weight) {
+    HDC hdc = GetDC(NULL);
+    int height = -MulDiv(pointSize, GetDeviceCaps(hdc, LOGPIXELSY), 72);
+    ReleaseDC(NULL, hdc);
+    return CreateFontW(height, 0, 0, 0, weight, FALSE, FALSE, FALSE,
+                       DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                       CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Microsoft YaHei UI");
+}
+
+static COLORREF ToastBlendColor(COLORREF a, COLORREF b, int percentB) {
+    int percentA = 100 - percentB;
+    return RGB(
+        (GetRValue(a) * percentA + GetRValue(b) * percentB) / 100,
+        (GetGValue(a) * percentA + GetGValue(b) * percentB) / 100,
+        (GetBValue(a) * percentA + GetBValue(b) * percentB) / 100);
+}
+
+static void ToastFillGradient(HDC hdc, const RECT* rect, COLORREF topColor, COLORREF bottomColor) {
+    int height = rect->bottom - rect->top;
+    if (height <= 0) {
+        return;
+    }
+
+    for (int y = 0; y < height; y++) {
+        COLORREF color = ToastBlendColor(topColor, bottomColor, (y * 100) / height);
+        HPEN pen = CreatePen(PS_SOLID, 1, color);
+        HGDIOBJ oldPen = SelectObject(hdc, pen);
+        MoveToEx(hdc, rect->left, rect->top + y, NULL);
+        LineTo(hdc, rect->right, rect->top + y);
+        SelectObject(hdc, oldPen);
+        DeleteObject(pen);
+    }
+}
+
+static COLORREF ToastAccentColor(void) {
+    if (wcsstr(g_toastMessage, L"禁用") != NULL) {
+        return RGB(255, 124, 118);
+    }
+    if (wcsstr(g_toastMessage, L"大写") != NULL) {
+        return RGB(94, 218, 255);
+    }
+    return RGB(65, 226, 169);
+}
+
+static void DrawToast(HDC hdc, const RECT* rect) {
+    COLORREF accent = ToastAccentColor();
+    RECT title = {rect->left + 16, rect->top + 9, rect->right - 16, rect->top + 30};
+    RECT message = {rect->left + 16, rect->top + 30, rect->right - 16, rect->top + 55};
+
+    ToastFillGradient(hdc, rect, RGB(20, 43, 66), RGB(42, 81, 108));
+
+    HPEN borderPen = CreatePen(PS_SOLID, 1, ToastBlendColor(RGB(140, 208, 255), accent, 25));
+    HGDIOBJ oldPen = SelectObject(hdc, borderPen);
+    HGDIOBJ oldBrush = SelectObject(hdc, GetStockObject(HOLLOW_BRUSH));
+    RoundRect(hdc, rect->left, rect->top, rect->right, rect->bottom, 14, 14);
+    SelectObject(hdc, oldBrush);
+    SelectObject(hdc, oldPen);
+    DeleteObject(borderPen);
+
+    HPEN accentPen = CreatePen(PS_SOLID, 2, accent);
+    oldPen = SelectObject(hdc, accentPen);
+    int centerX = (rect->left + rect->right) / 2;
+    MoveToEx(hdc, centerX - 34, rect->bottom - 9, NULL);
+    LineTo(hdc, centerX + 34, rect->bottom - 9);
+    SelectObject(hdc, oldPen);
+    DeleteObject(accentPen);
+
+    SetBkMode(hdc, TRANSPARENT);
+    HGDIOBJ oldFont = SelectObject(hdc, g_toastTitleFont);
+    SetTextColor(hdc, RGB(186, 225, 246));
+    DrawTextW(hdc, g_toastTitle, -1, &title, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    SelectObject(hdc, g_toastMessageFont);
+    SetTextColor(hdc, RGB(248, 253, 255));
+    DrawTextW(hdc, g_toastMessage, -1, &message, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    if (oldFont != NULL) {
+        SelectObject(hdc, oldFont);
+    }
+}
+
 // 全局提示框窗口过程
 static LRESULT CALLBACK ToastWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
@@ -288,27 +372,9 @@ static LRESULT CALLBACK ToastWndProc(HWND hWnd, UINT message, WPARAM wParam, LPA
         case WM_PAINT: {
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hWnd, &ps);
-
-            // 获取窗口大小
             RECT rect;
             GetClientRect(hWnd, &rect);
-
-            // 设置背景色
-            HBRUSH hBrush = CreateSolidBrush(RGB(50, 50, 50));
-            FillRect(hdc, &rect, hBrush);
-            DeleteObject(hBrush);
-
-            // 设置文本颜色
-            SetTextColor(hdc, RGB(255, 255, 255));
-            SetBkMode(hdc, TRANSPARENT);
-
-            // 获取窗口文本
-            wchar_t text[256];
-            GetWindowTextW(hWnd, text, 256);
-
-            // 绘制文本（居中）
-            DrawTextW(hdc, text, -1, &rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-
+            DrawToast(hdc, &rect);
             EndPaint(hWnd, &ps);
             return 0;
         }
@@ -318,10 +384,26 @@ static LRESULT CALLBACK ToastWndProc(HWND hWnd, UINT message, WPARAM wParam, LPA
 
 // 创建并显示全局提示框
 void TrayShowToast(const char* title, const wchar_t* message) {
-    // 先销毁之前的提示框
     ToastDestroy();
 
-    // 创建隐藏窗口
+    int width = 260;
+    int height = 66;
+
+    if (title != NULL && title[0] != '\0') {
+        MultiByteToWideChar(CP_UTF8, 0, title, -1, g_toastTitle,
+                            (int)(sizeof(g_toastTitle) / sizeof(g_toastTitle[0])));
+        g_toastTitle[(sizeof(g_toastTitle) / sizeof(g_toastTitle[0])) - 1] = L'\0';
+    } else {
+        wcscpy(g_toastTitle, L"PowerCapslock");
+    }
+
+    wcsncpy(g_toastMessage, message != NULL ? message : L"",
+            (sizeof(g_toastMessage) / sizeof(g_toastMessage[0])) - 1);
+    g_toastMessage[(sizeof(g_toastMessage) / sizeof(g_toastMessage[0])) - 1] = L'\0';
+
+    g_toastTitleFont = CreateToastFont(8, FW_MEDIUM);
+    g_toastMessageFont = CreateToastFont(11, FW_SEMIBOLD);
+
     WNDCLASSEXA wc = {0};
     wc.cbSize = sizeof(WNDCLASSEXA);
     wc.lpfnWndProc = ToastWndProc;
@@ -333,45 +415,56 @@ void TrayShowToast(const char* title, const wchar_t* message) {
     }
 
     g_toastWindow = CreateWindowExA(
-        WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,  // 置顶、工具窗口、不激活
+        WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED,
         TOAST_WINDOW_CLASS, "Toast",
-        WS_POPUP | WS_BORDER,  // 弹出窗口、边框
+        WS_POPUP,
         CW_USEDEFAULT, CW_USEDEFAULT,
-        350, 80,                         // 宽度 350, 高度 80
+        width, height,
         NULL, NULL, GetModuleHandle(NULL), NULL);
 
     if (g_toastWindow == NULL) {
         LOG_ERROR("Failed to create toast window");
+        ToastDestroy();
         return;
     }
 
-    // 设置窗口文本（显示内容）
-    SetWindowTextW(g_toastWindow, message);
+    SetWindowTextW(g_toastWindow, g_toastMessage);
+    SetLayeredWindowAttributes(g_toastWindow, 0, 238, LWA_ALPHA);
 
-    // 设置窗口透明效果
-    SetWindowLongPtrW(g_toastWindow, GWL_EXSTYLE,
-                      GetWindowLongPtrW(g_toastWindow, GWL_EXSTYLE) | WS_EX_LAYERED);
-    SetLayeredWindowAttributes(g_toastWindow, 0, 230, LWA_ALPHA);
-
-    // 获取屏幕尺寸，计算位置（屏幕底部居中）
-    RECT workArea;
-    if (SystemParametersInfoW(SPI_GETWORKAREA, 0, &workArea, 0)) {
-        int x = (workArea.right - workArea.left - 350) / 2;
-        int y = workArea.bottom - 100;  // 距离底部 100 像素
-        SetWindowPos(g_toastWindow, HWND_TOPMOST, x, y, 350, 80,
-                     SWP_SHOWWINDOW | SWP_NOACTIVATE);
-    } else {
-        SetWindowPos(g_toastWindow, HWND_TOPMOST, 0, 0, 350, 80,
-                     SWP_SHOWWINDOW | SWP_NOACTIVATE);
+    HRGN region = CreateRoundRectRgn(0, 0, width + 1, height + 1, 16, 16);
+    if (region != NULL && !SetWindowRgn(g_toastWindow, region, TRUE)) {
+        DeleteObject(region);
     }
 
-    // 显示窗口
-    ShowWindow(g_toastWindow, SW_SHOWNA);
+    POINT cursor;
+    if (!GetCursorPos(&cursor)) {
+        cursor.x = 0;
+        cursor.y = 0;
+    }
 
-    // 自动关闭定时器（2秒）
+    RECT workArea = {0};
+    MONITORINFO monitorInfo = {0};
+    monitorInfo.cbSize = sizeof(monitorInfo);
+    HMONITOR monitor = MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
+    int x = 0;
+    int y = 0;
+    if (monitor != NULL && GetMonitorInfoW(monitor, &monitorInfo)) {
+        workArea = monitorInfo.rcWork;
+        x = workArea.left + (workArea.right - workArea.left - width) / 2;
+        y = workArea.bottom - height - 48;
+    } else {
+        int screenWidth = GetSystemMetrics(SM_CXSCREEN);
+        int screenHeight = GetSystemMetrics(SM_CYSCREEN);
+        x = (screenWidth - width) / 2;
+        y = screenHeight - height - 72;
+    }
+
+    SetWindowPos(g_toastWindow, HWND_TOPMOST, x, y, width, height,
+                 SWP_SHOWWINDOW | SWP_NOACTIVATE);
+
     SetTimer(g_toastWindow, TIMER_TOAST_AUTO_CLOSE, 2000, NULL);
 
-    LOG_DEBUG("Toast shown: %S", message);
+    LOG_DEBUG("Toast shown: %S", g_toastMessage);
 }
 
 // 销毁全局提示框
@@ -381,5 +474,15 @@ static void ToastDestroy(void) {
         DestroyWindow(g_toastWindow);
         g_toastWindow = NULL;
         UnregisterClassA(TOAST_WINDOW_CLASS, GetModuleHandle(NULL));
+    }
+
+    if (g_toastTitleFont != NULL) {
+        DeleteObject(g_toastTitleFont);
+        g_toastTitleFont = NULL;
+    }
+
+    if (g_toastMessageFont != NULL) {
+        DeleteObject(g_toastMessageFont);
+        g_toastMessageFont = NULL;
     }
 }
