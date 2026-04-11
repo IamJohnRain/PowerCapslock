@@ -33,7 +33,10 @@ temp/
 
 # Voice recognition models and libraries (download separately)
 models/
-lib/
+lib/*
+!lib/webview2/
+!lib/webview2/WebView2.h
+!lib/webview2/WebView2Loader.dll
 
 # Test packaging scripts (don't commit)
 scripts/build.bat

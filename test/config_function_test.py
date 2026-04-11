@@ -198,12 +198,16 @@ class ConfigFunctionSuite:
         stderr_path.write_text(result.stderr or "", encoding="utf-8", errors="replace")
         return result
 
-    def start_config_dialog(self) -> subprocess.Popen[Any]:
+    def start_config_dialog(self, env: dict[str, str] | None = None) -> subprocess.Popen[Any]:
+        process_env = os.environ.copy()
+        if env:
+            process_env.update(env)
         return subprocess.Popen(
             [str(self.exe), "--test-config-dialog"],
             cwd=str(self.build_dir),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            env=process_env,
         )
 
     def launch_normal_for_log(self, seconds: float = 3.0) -> subprocess.Popen[Any]:
@@ -331,7 +335,7 @@ class ConfigFunctionSuite:
             time.sleep(0.05)
         raise TimeoutError(description)
 
-    def test_config_dialog_gui_buttons(self) -> None:
+    def legacy_native_config_dialog_gui_buttons(self) -> None:
         try:
             import win32api
             import win32con
@@ -562,6 +566,64 @@ class ConfigFunctionSuite:
         finally:
             if proc is not None:
                 close_process(proc)
+
+    def run_config_dialog_webview_action(
+        self,
+        action: str,
+        log_path: Path | None = None,
+        model_path: Path | None = None,
+    ) -> tuple[bool, str]:
+        env = {
+            "POWERCAPSLOCK_CONFIG_WEBVIEW_TEST_ACTION": action,
+        }
+        if log_path is not None:
+            env["POWERCAPSLOCK_CONFIG_WEBVIEW_TEST_LOG_PATH"] = self.path_for_config(log_path)
+        if model_path is not None:
+            env["POWERCAPSLOCK_CONFIG_WEBVIEW_TEST_MODEL_PATH"] = self.path_for_config(model_path)
+
+        proc = self.start_config_dialog(env)
+        try:
+            rc = proc.wait(timeout=18)
+        except subprocess.TimeoutExpired:
+            self.stop_process(proc)
+            return False, f"{action} timed out"
+        return rc == 0, f"{action} rc={rc}"
+
+    def test_config_dialog_gui_buttons(self) -> None:
+        log_dir = self.output_dir / "gui_dialog" / "logs"
+        model_dir = self.output_dir / "gui_dialog" / "models"
+        edited_log_dir = self.output_dir / "gui_dialog" / "edited_logs"
+        edited_model_dir = self.output_dir / "gui_dialog" / "edited_models"
+        for directory in (log_dir, model_dir, edited_log_dir, edited_model_dir):
+            directory.mkdir(parents=True, exist_ok=True)
+
+        config = self.base_config(log_dir, model_dir)
+        config["mappings"] = [{"from": "H", "to": "LEFT"}]
+        self.write_config(config)
+
+        add_ok, add_detail = self.run_config_dialog_webview_action("add", edited_log_dir, edited_model_dir)
+        saved = self.read_config()
+        add_saved = (
+            saved.get("paths", {}).get("log_directory") == self.path_for_config(edited_log_dir)
+            and saved.get("paths", {}).get("model_directory") == self.path_for_config(edited_model_dir)
+            and any(m.get("from") == "Q" and m.get("to") == "B" for m in saved.get("mappings", []))
+        )
+
+        edit_ok, edit_detail = self.run_config_dialog_webview_action("edit")
+        saved = self.read_config()
+        edit_saved = any(m.get("from") == "Q" and m.get("to") == "C" for m in saved.get("mappings", []))
+
+        remove_ok, remove_detail = self.run_config_dialog_webview_action("delete")
+        saved = self.read_config()
+        remove_saved = not any(m.get("from") == "Q" for m in saved.get("mappings", []))
+
+        passed = add_ok and add_saved and edit_ok and edit_saved and remove_ok and remove_saved
+        details = (
+            f"{add_detail}, add_saved={add_saved}; "
+            f"{edit_detail}, edit_saved={edit_saved}; "
+            f"{remove_detail}, remove_saved={remove_saved}"
+        )
+        self.add_result("config WebView buttons and mapping form", passed, details)
 
     def write_reports(self) -> None:
         passed_count = sum(1 for r in self.results if r.passed)

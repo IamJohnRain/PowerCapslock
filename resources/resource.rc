@@ -29,8 +29,8 @@ IDI_ICON_NORMAL    ICON    "icon.ico"
 IDI_ICON_DISABLED  ICON    "icon_disabled.ico"
 
 1 VERSIONINFO
-FILEVERSION     0,1,2,0
-PRODUCTVERSION  0,1,2,0
+FILEVERSION     0,2,0,0
+PRODUCTVERSION  0,2,0,0
 FILEFLAGSMASK   0x3f
 FILEFLAGS       0x0
 FILEOS          VOS_NT_WINDOWS32
@@ -43,12 +43,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "John"
             VALUE "FileDescription", "PowerCapslock - Windows keyboard remapping and speech input tool"
-            VALUE "FileVersion", "0.1.2.preview"
+            VALUE "FileVersion", "0.2.0"
             VALUE "InternalName", "PowerCapslock"
             VALUE "LegalCopyright", "Copyright (C) 2024 John. MIT License."
             VALUE "OriginalFilename", "powercapslock.exe"
             VALUE "ProductName", "PowerCapslock"
-            VALUE "ProductVersion", "0.1.2.preview"
+            VALUE "ProductVersion", "0.2.0"
         END
     END
     BLOCK "VarFileInfo"
@@ -57,14 +57,14 @@ BEGIN
     END
 END
 
-IDD_CONFIG_DIALOG DIALOGEX 0, 0, 540, 330
+IDD_CONFIG_DIALOG DIALOGEX 0, 0, 560, 380
 STYLE DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "PowerCapslock 设置"
 FONT 9, "Microsoft YaHei UI"
 BEGIN
-    CONTROL         "", IDC_TAB, WC_TABCONTROL, WS_TABSTOP, 16, 62, 508, 210
-    CONTROL         "保存",IDOK,"BUTTON",WS_TABSTOP | BS_DEFPUSHBUTTON | BS_OWNERDRAW, 366, 292, 74, 24
-    CONTROL         "取消",IDCANCEL,"BUTTON",WS_TABSTOP | BS_PUSHBUTTON | BS_OWNERDRAW, 450, 292, 74, 24
+    CONTROL         "", IDC_TAB, WC_TABCONTROL, WS_TABSTOP, 24, 68, 300, 34
+    CONTROL         "保存",IDOK,"BUTTON",WS_TABSTOP | BS_DEFPUSHBUTTON | BS_OWNERDRAW, 386, 342, 78, 26
+    CONTROL         "取消",IDCANCEL,"BUTTON",WS_TABSTOP | BS_PUSHBUTTON | BS_OWNERDRAW, 476, 342, 78, 26
 END
 
 IDD_MAPPING_DIALOG DIALOGEX 0, 0, 300, 142

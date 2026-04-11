@@ -41,6 +41,7 @@ static HWND g_hTab;
 static HWND g_hLogEdit;
 static HWND g_hModelEdit;
 static HWND g_hMappingList;
+static HWND g_hHoverButton;
 static int g_currentTab;
 static Config g_workingConfig;
 static bool g_needRebuildMappings = false;
@@ -51,15 +52,16 @@ static HBRUSH g_hPanelBrush = NULL;
 static HBRUSH g_hPanelAltBrush = NULL;
 static HBRUSH g_hEditBrush = NULL;
 
-static const COLORREF COLOR_BG = RGB(13, 18, 25);
-static const COLORREF COLOR_PANEL = RGB(24, 31, 41);
-static const COLORREF COLOR_PANEL_ALT = RGB(31, 42, 55);
-static const COLORREF COLOR_EDIT = RGB(18, 25, 34);
-static const COLORREF COLOR_TEXT = RGB(235, 246, 255);
-static const COLORREF COLOR_MUTED = RGB(151, 170, 190);
-static const COLORREF COLOR_ACCENT = RGB(0, 214, 255);
-static const COLORREF COLOR_ACCENT_GREEN = RGB(92, 255, 177);
-static const COLORREF COLOR_ACCENT_CORAL = RGB(255, 112, 91);
+static const COLORREF COLOR_BG = RGB(226, 241, 255);
+static const COLORREF COLOR_HEADER = RGB(215, 233, 252);
+static const COLORREF COLOR_PANEL = RGB(244, 250, 255);
+static const COLORREF COLOR_PANEL_ALT = RGB(232, 245, 255);
+static const COLORREF COLOR_EDIT = RGB(255, 255, 255);
+static const COLORREF COLOR_TEXT = RGB(25, 48, 76);
+static const COLORREF COLOR_MUTED = RGB(84, 113, 146);
+static const COLORREF COLOR_ACCENT = RGB(42, 145, 255);
+static const COLORREF COLOR_ACCENT_GREEN = RGB(39, 188, 143);
+static const COLORREF COLOR_ACCENT_CORAL = RGB(232, 92, 84);
 
 // 控件句柄数组，用于切换标签时销毁
 static HWND g_tabControls[2][20];
@@ -90,6 +92,8 @@ static HBRUSH HandleCtlColor(HWND hCtrl, HDC hdc, UINT msg);
 static void DrawOwnerButton(const DRAWITEMSTRUCT* dis);
 static void DrawOwnerTab(const DRAWITEMSTRUCT* dis);
 static LRESULT DrawMappingListItem(NMLVCUSTOMDRAW* draw);
+static LRESULT CALLBACK GlassButtonSubclassProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR id, DWORD_PTR refData);
+static void AttachGlassButton(HWND hWnd);
 static void Utf8ToWide(const char* source, wchar_t* dest, int destCount);
 static void WideToUtf8(const wchar_t* source, char* dest, int destCount);
 static void SetEditTextUtf8(HWND hWnd, const char* text);
@@ -186,6 +190,24 @@ static const wchar_t* tabTitles[TAB_COUNT] = {
     L"快捷映射"
 };
 
+static COLORREF BlendColor(COLORREF a, COLORREF b, int percentB) {
+    int percentA = 100 - percentB;
+    return RGB(
+        (GetRValue(a) * percentA + GetRValue(b) * percentB) / 100,
+        (GetGValue(a) * percentA + GetGValue(b) * percentB) / 100,
+        (GetBValue(a) * percentA + GetBValue(b) * percentB) / 100);
+}
+
+static COLORREF LerpColor(COLORREF a, COLORREF b, int step, int total) {
+    if (total <= 0) {
+        return b;
+    }
+    return RGB(
+        GetRValue(a) + (GetRValue(b) - GetRValue(a)) * step / total,
+        GetGValue(a) + (GetGValue(b) - GetGValue(a)) * step / total,
+        GetBValue(a) + (GetBValue(b) - GetBValue(a)) * step / total);
+}
+
 static void FillRoundRect(HDC hdc, const RECT* rc, COLORREF fill, COLORREF border) {
     HBRUSH brush = CreateSolidBrush(fill);
     HPEN pen = CreatePen(PS_SOLID, 1, border);
@@ -198,6 +220,34 @@ static void FillRoundRect(HDC hdc, const RECT* rc, COLORREF fill, COLORREF borde
     DeleteObject(pen);
 }
 
+static void DrawGradientRoundRect(HDC hdc, const RECT* rc, COLORREF topColor, COLORREF bottomColor, COLORREF border, int radius) {
+    int height = rc->bottom - rc->top;
+    HRGN clip = CreateRoundRectRgn(rc->left, rc->top, rc->right + 1, rc->bottom + 1, radius, radius);
+    int saved = SaveDC(hdc);
+    SelectClipRgn(hdc, clip);
+
+    for (int y = 0; y < height; y++) {
+        COLORREF c = LerpColor(topColor, bottomColor, y, height - 1);
+        HPEN pen = CreatePen(PS_SOLID, 1, c);
+        HGDIOBJ oldPen = SelectObject(hdc, pen);
+        MoveToEx(hdc, rc->left, rc->top + y, NULL);
+        LineTo(hdc, rc->right, rc->top + y);
+        SelectObject(hdc, oldPen);
+        DeleteObject(pen);
+    }
+
+    RestoreDC(hdc, saved);
+    DeleteObject(clip);
+
+    HPEN borderPen = CreatePen(PS_SOLID, 1, border);
+    HGDIOBJ oldPen = SelectObject(hdc, borderPen);
+    HGDIOBJ oldBrush = SelectObject(hdc, GetStockObject(HOLLOW_BRUSH));
+    RoundRect(hdc, rc->left, rc->top, rc->right, rc->bottom, radius, radius);
+    SelectObject(hdc, oldBrush);
+    SelectObject(hdc, oldPen);
+    DeleteObject(borderPen);
+}
+
 static void PaintConfigDialog(HWND hDlg) {
     PAINTSTRUCT ps;
     HDC hdc = BeginPaint(hDlg, &ps);
@@ -207,15 +257,18 @@ static void PaintConfigDialog(HWND hDlg) {
     FillRect(hdc, &rc, g_hBgBrush != NULL ? g_hBgBrush : GetSysColorBrush(COLOR_WINDOW));
 
     RECT header = {0, 0, rc.right, 62};
-    HBRUSH headerBrush = CreateSolidBrush(RGB(16, 23, 33));
+    HBRUSH headerBrush = CreateSolidBrush(COLOR_HEADER);
     FillRect(hdc, &header, headerBrush);
     DeleteObject(headerBrush);
 
-    RECT accent = {18, 54, 190, 58};
+    RECT glow = {16, 12, rc.right - 16, 94};
+    DrawGradientRoundRect(hdc, &glow, RGB(248, 253, 255), RGB(210, 232, 252), RGB(248, 253, 255), 16);
+
+    RECT accent = {28, 82, 200, 85};
     HBRUSH accentBrush = CreateSolidBrush(COLOR_ACCENT);
     FillRect(hdc, &accent, accentBrush);
-    accent.left = 198;
-    accent.right = 278;
+    accent.left = 208;
+    accent.right = 288;
     DeleteObject(accentBrush);
     accentBrush = CreateSolidBrush(COLOR_ACCENT_GREEN);
     FillRect(hdc, &accent, accentBrush);
@@ -227,24 +280,25 @@ static void PaintConfigDialog(HWND hDlg) {
     if (g_hTitleFont != NULL) {
         oldFont = SelectObject(hdc, g_hTitleFont);
     }
-    RECT title = {18, 11, rc.right - 18, 36};
+    RECT title = {28, 16, rc.right - 28, 42};
     DrawTextW(hdc, L"设置中心", -1, &title, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     if (oldFont != NULL) {
         SelectObject(hdc, oldFont);
     }
 
     SetTextColor(hdc, COLOR_MUTED);
-    RECT subtitle = {18, 34, rc.right - 18, 52};
+    RECT subtitle = {28, 44, rc.right - 28, 62};
     DrawTextW(hdc, L"管理日志、模型路径，以及 CapsLock 快捷映射。", -1, &subtitle,
               DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
-    RECT panel = {16, 96, rc.right - 16, rc.bottom - 74};
-    FillRoundRect(hdc, &panel, COLOR_PANEL, RGB(54, 71, 88));
+    RECT panelShadow = {24, 112, rc.right - 18, rc.bottom - 50};
+    FillRoundRect(hdc, &panelShadow, RGB(196, 218, 238), RGB(196, 218, 238));
 
-    RECT sideAccent = {16, 114, 20, rc.bottom - 94};
-    HBRUSH greenBrush = CreateSolidBrush(COLOR_ACCENT_GREEN);
-    FillRect(hdc, &sideAccent, greenBrush);
-    DeleteObject(greenBrush);
+    RECT panel = {20, 108, rc.right - 22, rc.bottom - 58};
+    DrawGradientRoundRect(hdc, &panel, RGB(253, 255, 255), COLOR_PANEL, RGB(205, 226, 244), 14);
+
+    RECT sideAccent = {26, 132, 30, rc.bottom - 82};
+    DrawGradientRoundRect(hdc, &sideAccent, COLOR_ACCENT, COLOR_ACCENT_GREEN, COLOR_ACCENT_GREEN, 5);
 
     EndPaint(hDlg, &ps);
 }
@@ -268,42 +322,85 @@ static HBRUSH HandleCtlColor(HWND hCtrl, HDC hdc, UINT msg) {
     if (hCtrl != NULL && GetParent(hCtrl) == g_hDlg) {
         return g_hPanelBrush != NULL ? g_hPanelBrush : GetSysColorBrush(COLOR_WINDOW);
     }
-    return g_hBgBrush != NULL ? g_hBgBrush : GetSysColorBrush(COLOR_WINDOW);
+    return g_hPanelBrush != NULL ? g_hPanelBrush : GetSysColorBrush(COLOR_WINDOW);
 }
 
 static void DrawOwnerButton(const DRAWITEMSTRUCT* dis) {
     RECT rc = dis->rcItem;
+    RECT shadow = rc;
+    RECT gloss;
     int id = (int)dis->CtlID;
     bool pressed = (dis->itemState & ODS_SELECTED) != 0;
+    bool hot = (g_hHoverButton == dis->hwndItem) || ((dis->itemState & ODS_HOTLIGHT) != 0);
     bool disabled = (dis->itemState & ODS_DISABLED) != 0;
-    COLORREF fill = COLOR_PANEL_ALT;
-    COLORREF border = RGB(72, 92, 112);
+    COLORREF accent = COLOR_ACCENT;
     COLORREF text = COLOR_TEXT;
+    COLORREF topColor;
+    COLORREF bottomColor;
+    COLORREF border;
 
     if (id == IDOK || id == IDC_BTN_ADD) {
-        fill = pressed ? RGB(58, 205, 150) : COLOR_ACCENT_GREEN;
-        border = RGB(126, 255, 204);
-        text = RGB(6, 20, 22);
+        accent = COLOR_ACCENT_GREEN;
     } else if (id == IDC_BTN_EDIT || id == IDC_BROWSE_LOG || id == IDC_BROWSE_MODEL) {
-        fill = pressed ? RGB(0, 160, 205) : COLOR_ACCENT;
-        border = RGB(122, 234, 255);
-        text = RGB(5, 18, 24);
+        accent = COLOR_ACCENT;
     } else if (id == IDC_BTN_REMOVE) {
-        fill = pressed ? RGB(214, 83, 70) : COLOR_ACCENT_CORAL;
-        border = RGB(255, 168, 151);
-        text = RGB(28, 8, 8);
+        accent = COLOR_ACCENT_CORAL;
+        text = RGB(92, 30, 28);
+    } else if (id == IDCANCEL || id == IDC_BTN_RESET) {
+        accent = RGB(94, 133, 174);
     }
 
+    topColor = BlendColor(RGB(255, 255, 255), accent, hot ? 18 : 10);
+    bottomColor = BlendColor(COLOR_BG, accent, hot ? 38 : 24);
+    border = hot ? BlendColor(RGB(255, 255, 255), accent, 54) : BlendColor(RGB(255, 255, 255), accent, 30);
+
+    if (pressed) {
+        topColor = BlendColor(COLOR_BG, accent, 42);
+        bottomColor = BlendColor(COLOR_BG, accent, 56);
+        border = BlendColor(RGB(255, 255, 255), accent, 68);
+    }
     if (disabled) {
-        fill = RGB(45, 52, 62);
-        border = RGB(76, 84, 96);
-        text = RGB(130, 140, 154);
+        topColor = RGB(232, 240, 248);
+        bottomColor = RGB(218, 229, 240);
+        border = RGB(200, 214, 228);
+        text = RGB(132, 150, 170);
+    }
+
+    InflateRect(&rc, -1, -1);
+    shadow.left += 2;
+    shadow.top += 3;
+    shadow.right += 1;
+    shadow.bottom += 2;
+    if (!pressed && !disabled) {
+        FillRoundRect(dis->hDC, &shadow, hot ? RGB(177, 210, 241) : RGB(196, 219, 240), RGB(196, 219, 240));
     }
 
     if (pressed) {
         OffsetRect(&rc, 1, 1);
     }
-    FillRoundRect(dis->hDC, &rc, fill, border);
+    DrawGradientRoundRect(dis->hDC, &rc, topColor, bottomColor, border, 10);
+
+    gloss = rc;
+    gloss.left += 4;
+    gloss.right -= 4;
+    gloss.top += 3;
+    gloss.bottom = gloss.top + max(5, (rc.bottom - rc.top) / 3);
+    DrawGradientRoundRect(dis->hDC, &gloss,
+                          hot ? RGB(255, 255, 255) : RGB(250, 254, 255),
+                          BlendColor(RGB(255, 255, 255), topColor, 35),
+                          RGB(255, 255, 255), 8);
+
+    if (hot && !disabled) {
+        RECT glow = rc;
+        InflateRect(&glow, 2, 2);
+        HPEN glowPen = CreatePen(PS_SOLID, 1, BlendColor(RGB(255, 255, 255), accent, 45));
+        HGDIOBJ oldPen = SelectObject(dis->hDC, glowPen);
+        HGDIOBJ oldBrush = SelectObject(dis->hDC, GetStockObject(HOLLOW_BRUSH));
+        RoundRect(dis->hDC, glow.left, glow.top, glow.right, glow.bottom, 12, 12);
+        SelectObject(dis->hDC, oldBrush);
+        SelectObject(dis->hDC, oldPen);
+        DeleteObject(glowPen);
+    }
 
     wchar_t label[64];
     GetWindowTextW(dis->hwndItem, label, (int)ARRAYSIZE(label));
@@ -325,11 +422,19 @@ static void DrawOwnerTab(const DRAWITEMSTRUCT* dis) {
     RECT rc = dis->rcItem;
     InflateRect(&rc, -2, -2);
     bool selected = ((int)dis->itemID == TabCtrl_GetCurSel(dis->hwndItem));
-    COLORREF fill = selected ? COLOR_PANEL_ALT : RGB(17, 24, 34);
-    COLORREF border = selected ? COLOR_ACCENT : RGB(60, 78, 96);
-    COLORREF text = selected ? COLOR_ACCENT_GREEN : COLOR_MUTED;
+    COLORREF accent = selected ? COLOR_ACCENT : RGB(116, 154, 194);
+    COLORREF topColor = selected ? RGB(255, 255, 255) : RGB(246, 252, 255);
+    COLORREF bottomColor = selected ? BlendColor(COLOR_BG, COLOR_ACCENT, 32) : BlendColor(COLOR_BG, RGB(116, 154, 194), 18);
+    COLORREF border = selected ? COLOR_ACCENT : RGB(196, 218, 238);
+    COLORREF text = selected ? RGB(16, 82, 145) : COLOR_MUTED;
 
-    FillRoundRect(dis->hDC, &rc, fill, border);
+    DrawGradientRoundRect(dis->hDC, &rc, topColor, bottomColor, border, 10);
+    if (selected) {
+        RECT line = {rc.left + 10, rc.bottom - 4, rc.right - 10, rc.bottom - 2};
+        HBRUSH lineBrush = CreateSolidBrush(accent);
+        FillRect(dis->hDC, &line, lineBrush);
+        DeleteObject(lineBrush);
+    }
     SetBkMode(dis->hDC, TRANSPARENT);
     SetTextColor(dis->hDC, text);
     DrawTextW(dis->hDC, tabTitles[dis->itemID], -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
@@ -341,10 +446,60 @@ static LRESULT DrawMappingListItem(NMLVCUSTOMDRAW* draw) {
             return CDRF_NOTIFYITEMDRAW;
         case CDDS_ITEMPREPAINT:
             draw->clrText = COLOR_TEXT;
-            draw->clrTextBk = (draw->nmcd.uItemState & CDIS_SELECTED) ? RGB(35, 78, 98) : COLOR_PANEL;
+            draw->clrTextBk = (draw->nmcd.uItemState & CDIS_SELECTED) ? RGB(203, 230, 255) : RGB(250, 253, 255);
             return CDRF_NEWFONT;
         default:
             return CDRF_DODEFAULT;
+    }
+}
+
+static LRESULT CALLBACK GlassButtonSubclassProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR id, DWORD_PTR refData) {
+    (void)id;
+    (void)refData;
+
+    switch (msg) {
+        case WM_MOUSEMOVE: {
+            if (g_hHoverButton != hWnd) {
+                HWND oldHover = g_hHoverButton;
+                g_hHoverButton = hWnd;
+                if (oldHover != NULL && IsWindow(oldHover)) {
+                    InvalidateRect(oldHover, NULL, TRUE);
+                }
+                InvalidateRect(hWnd, NULL, TRUE);
+            }
+
+            TRACKMOUSEEVENT tme;
+            ZeroMemory(&tme, sizeof(tme));
+            tme.cbSize = sizeof(tme);
+            tme.dwFlags = TME_LEAVE;
+            tme.hwndTrack = hWnd;
+            TrackMouseEvent(&tme);
+            break;
+        }
+        case WM_MOUSELEAVE:
+            if (g_hHoverButton == hWnd) {
+                g_hHoverButton = NULL;
+                InvalidateRect(hWnd, NULL, TRUE);
+            }
+            break;
+        case WM_LBUTTONDOWN:
+        case WM_LBUTTONUP:
+            InvalidateRect(hWnd, NULL, TRUE);
+            break;
+        case WM_NCDESTROY:
+            if (g_hHoverButton == hWnd) {
+                g_hHoverButton = NULL;
+            }
+            RemoveWindowSubclass(hWnd, GlassButtonSubclassProc, 1);
+            break;
+    }
+
+    return DefSubclassProc(hWnd, msg, wParam, lParam);
+}
+
+static void AttachGlassButton(HWND hWnd) {
+    if (hWnd != NULL) {
+        SetWindowSubclass(hWnd, GlassButtonSubclassProc, 1, 0);
     }
 }
 
@@ -485,8 +640,8 @@ static INT_PTR CALLBACK ConfigDialogProc(HWND hDlg, UINT msg, WPARAM wParam, LPA
             RECT rc;
             GetClientRect(hDlg, &rc);
             FillRect(hdc, &rc, g_hBgBrush != NULL ? g_hBgBrush : GetSysColorBrush(COLOR_WINDOW));
-            RECT panel = {16, 96, rc.right - 16, rc.bottom - 74};
-            FillRoundRect(hdc, &panel, COLOR_PANEL, RGB(54, 71, 88));
+            RECT panel = {20, 108, rc.right - 22, rc.bottom - 58};
+            FillRoundRect(hdc, &panel, COLOR_PANEL, RGB(205, 226, 244));
             return (INT_PTR)TRUE;
         }
 
@@ -573,13 +728,15 @@ static void OnInitDialog(HWND hDlg) {
     g_tabControlCount[0] = 0;
     g_tabControlCount[1] = 0;
     InitDialogFonts(hDlg);
+    AttachGlassButton(GetDlgItem(hDlg, IDOK));
+    AttachGlassButton(GetDlgItem(hDlg, IDCANCEL));
 
     LONG_PTR style = GetWindowLongPtr(g_hTab, GWL_STYLE);
     SetWindowLongPtr(g_hTab, GWL_STYLE,
                      style | TCS_OWNERDRAWFIXED | TCS_FIXEDWIDTH | TCS_BUTTONS | TCS_FLATBUTTONS);
-    MoveWindow(g_hTab, 18, 62, 282, 30, TRUE);
-    SetWindowPos(g_hTab, NULL, 18, 62, 282, 30, SWP_NOZORDER | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
-    TabCtrl_SetItemSize(g_hTab, 134, 28);
+    MoveWindow(g_hTab, 24, 68, 300, 34, TRUE);
+    SetWindowPos(g_hTab, NULL, 24, 68, 300, 34, SWP_NOZORDER | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+    TabCtrl_SetItemSize(g_hTab, 144, 30);
 
     TCITEMW tie;
     ZeroMemory(&tie, sizeof(tie));
@@ -618,18 +775,18 @@ static void CreateTab1Controls(HWND hDlg) {
     int right;
     int top;
     int labelW = 82;
-    int browseW = 86;
-    int gap = 10;
-    int editH = 26;
-    int rowGap = 46;
+    int browseW = 88;
+    int gap = 12;
+    int editH = 28;
+    int rowGap = 44;
     int editX;
     int editW;
 
     GetClientRect(hDlg, &rcTab);
-    rcTab.left = 32;
-    rcTab.top = 112;
-    rcTab.right -= 32;
-    rcTab.bottom -= 104;
+    rcTab.left = 40;
+    rcTab.top = 126;
+    rcTab.right -= 40;
+    rcTab.bottom -= 92;
 
     left = rcTab.left;
     right = rcTab.right;
@@ -646,7 +803,7 @@ static void CreateTab1Controls(HWND hDlg) {
         left, top + 21, right - left, 18, hDlg, NULL, GetModuleHandle(NULL), NULL);
     TrackTabControl(TAB_BASIC, hStatic);
 
-    top += 54;
+    top += 48;
 
     hStatic = CreateWindowExW(0, L"STATIC", L"日志目录", WS_CHILD | SS_LEFT | WS_VISIBLE,
         left, top + 4, labelW - 12, 20, hDlg, NULL, GetModuleHandle(NULL), NULL);
@@ -660,6 +817,7 @@ static void CreateTab1Controls(HWND hDlg) {
     HWND hBtn = CreateWindowExW(0, L"BUTTON", L"浏览...", WS_TABSTOP | BS_PUSHBUTTON | BS_OWNERDRAW | WS_CHILD | WS_VISIBLE,
         right - browseW, top - 1, browseW, editH + 2, hDlg, (HMENU)IDC_BROWSE_LOG, GetModuleHandle(NULL), NULL);
     TrackTabControl(TAB_BASIC, hBtn);
+    AttachGlassButton(hBtn);
 
     top += rowGap;
 
@@ -675,8 +833,9 @@ static void CreateTab1Controls(HWND hDlg) {
     hBtn = CreateWindowExW(0, L"BUTTON", L"浏览...", WS_TABSTOP | BS_PUSHBUTTON | BS_OWNERDRAW | WS_CHILD | WS_VISIBLE,
         right - browseW, top - 1, browseW, editH + 2, hDlg, (HMENU)IDC_BROWSE_MODEL, GetModuleHandle(NULL), NULL);
     TrackTabControl(TAB_BASIC, hBtn);
+    AttachGlassButton(hBtn);
 
-    top += rowGap + 2;
+    top += rowGap + 4;
 
     hStatic = CreateWindowExW(0, L"STATIC", L"建议使用绝对路径。修改日志或模型目录后，重启程序即可写入新位置。",
         WS_CHILD | SS_LEFT | WS_VISIBLE, editX, top, right - editX, 34, hDlg, NULL, GetModuleHandle(NULL), NULL);
@@ -697,28 +856,28 @@ static void CreateTab2Controls(HWND hDlg) {
     int right;
     int top;
     int bottom;
-    int btnW = 96;
-    int btnH = 30;
-    int btnGap = 8;
+    int btnW = 104;
+    int btnH = 28;
+    int btnGap = 10;
     int btnX;
     int btnY;
     int listW;
     int listH;
 
     GetClientRect(hDlg, &rcTab);
-    rcTab.left = 32;
-    rcTab.top = 112;
-    rcTab.right -= 32;
-    rcTab.bottom -= 104;
+    rcTab.left = 40;
+    rcTab.top = 126;
+    rcTab.right -= 40;
+    rcTab.bottom -= 92;
 
     left = rcTab.left;
     right = rcTab.right;
     top = rcTab.top;
     bottom = rcTab.bottom;
     btnX = right - btnW;
-    btnY = top + 46;
+    btnY = top + 48;
     listW = btnX - left - 14;
-    listH = bottom - (top + 46);
+    listH = bottom - (top + 48);
 
     HWND hStatic = CreateWindowExW(0, L"STATIC", L"CapsLock 快捷映射", WS_CHILD | SS_LEFT | WS_VISIBLE,
         left, top, 220, 20, hDlg, NULL, GetModuleHandle(NULL), NULL);
@@ -731,12 +890,12 @@ static void CreateTab2Controls(HWND hDlg) {
 
     DWORD listStyle = LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | WS_CHILD | WS_VISIBLE | WS_TABSTOP;
     g_hMappingList = CreateWindowExW(WS_EX_CLIENTEDGE, WC_LISTVIEWW, NULL, listStyle,
-        left, top + 46, listW, listH, hDlg, (HMENU)IDC_MAPPING_LIST, GetModuleHandle(NULL), NULL);
+        left, top + 48, listW, listH, hDlg, (HMENU)IDC_MAPPING_LIST, GetModuleHandle(NULL), NULL);
     TrackTabControl(TAB_MAPPING, g_hMappingList);
     ListView_SetExtendedListViewStyle(g_hMappingList,
         LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_DOUBLEBUFFER | LVS_EX_LABELTIP);
-    ListView_SetBkColor(g_hMappingList, COLOR_PANEL);
-    ListView_SetTextBkColor(g_hMappingList, COLOR_PANEL);
+    ListView_SetBkColor(g_hMappingList, RGB(250, 253, 255));
+    ListView_SetTextBkColor(g_hMappingList, RGB(250, 253, 255));
     ListView_SetTextColor(g_hMappingList, COLOR_TEXT);
 
     LVCOLUMNW lvc;
@@ -744,17 +903,17 @@ static void CreateTab2Controls(HWND hDlg) {
     lvc.mask = LVCF_FMT | LVCF_WIDTH | LVCF_TEXT;
 
     lvc.pszText = L"触发键";
-    lvc.cx = 82;
+    lvc.cx = 86;
     lvc.fmt = LVCFMT_LEFT;
     SendMessageW(g_hMappingList, LVM_INSERTCOLUMNW, 0, (LPARAM)&lvc);
 
     lvc.pszText = L"输出键";
-    lvc.cx = 96;
+    lvc.cx = 104;
     lvc.fmt = LVCFMT_LEFT;
     SendMessageW(g_hMappingList, LVM_INSERTCOLUMNW, 1, (LPARAM)&lvc);
 
     lvc.pszText = L"动作说明";
-    lvc.cx = listW - 192;
+    lvc.cx = listW - 204;
     if (lvc.cx < 150) {
         lvc.cx = 150;
     }
@@ -766,21 +925,25 @@ static void CreateTab2Controls(HWND hDlg) {
     HWND hBtn = CreateWindowExW(0, L"BUTTON", L"新增映射", WS_TABSTOP | BS_PUSHBUTTON | BS_OWNERDRAW | WS_CHILD | WS_VISIBLE,
         btnX, btnY, btnW, btnH, hDlg, (HMENU)IDC_BTN_ADD, GetModuleHandle(NULL), NULL);
     TrackTabControl(TAB_MAPPING, hBtn);
+    AttachGlassButton(hBtn);
     btnY += btnH + btnGap;
 
     hBtn = CreateWindowExW(0, L"BUTTON", L"编辑映射", WS_TABSTOP | BS_PUSHBUTTON | BS_OWNERDRAW | WS_CHILD | WS_VISIBLE,
         btnX, btnY, btnW, btnH, hDlg, (HMENU)IDC_BTN_EDIT, GetModuleHandle(NULL), NULL);
     TrackTabControl(TAB_MAPPING, hBtn);
+    AttachGlassButton(hBtn);
     btnY += btnH + btnGap;
 
     hBtn = CreateWindowExW(0, L"BUTTON", L"删除映射", WS_TABSTOP | BS_PUSHBUTTON | BS_OWNERDRAW | WS_CHILD | WS_VISIBLE,
         btnX, btnY, btnW, btnH, hDlg, (HMENU)IDC_BTN_REMOVE, GetModuleHandle(NULL), NULL);
     TrackTabControl(TAB_MAPPING, hBtn);
-    btnY += btnH + btnGap + 8;
+    AttachGlassButton(hBtn);
+    btnY += btnH + btnGap;
 
     hBtn = CreateWindowExW(0, L"BUTTON", L"恢复默认", WS_TABSTOP | BS_PUSHBUTTON | BS_OWNERDRAW | WS_CHILD | WS_VISIBLE,
         btnX, btnY, btnW, btnH, hDlg, (HMENU)IDC_BTN_RESET, GetModuleHandle(NULL), NULL);
     TrackTabControl(TAB_MAPPING, hBtn);
+    AttachGlassButton(hBtn);
 
     for (int i = 0; i < g_tabControlCount[TAB_MAPPING]; i++) {
         SetWindowPos(g_tabControls[TAB_MAPPING][i], HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
@@ -994,6 +1157,8 @@ static INT_PTR CALLBACK MappingDialogProc(HWND hDlg, UINT msg, WPARAM wParam, LP
     switch (msg) {
         case WM_INITDIALOG: {
             SetWindowTextW(hDlg, L"按键映射");
+            AttachGlassButton(GetDlgItem(hDlg, IDOK));
+            AttachGlassButton(GetDlgItem(hDlg, IDCANCEL));
             if (strlen(g_mappingFromText) > 0) {
                 SetEditTextUtf8(GetDlgItem(hDlg, IDC_FROM_KEY), g_mappingFromText);
                 SetEditTextUtf8(GetDlgItem(hDlg, IDC_TO_KEY), g_mappingToText);

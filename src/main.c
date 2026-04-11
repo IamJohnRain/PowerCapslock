@@ -111,8 +111,8 @@ static BOOL InitializeModules(void) {
                 MessageBoxW(NULL,
                     L"请按以下步骤启用语音输入：\n\n"
                     L"1. 下载 SenseVoice 模型文件\n"
-                    L"   地址: https://github.com/HaujetZhao/CapsWriter-Offline/releases/tag/models\n"
-                    L"   下载: sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.zip\n\n"
+                    L"   地址: https://github.com/IamJohnRain/PowerCapslock/releases/tag/v0.2.0\n"
+                    L"   下载: PowerCapslock-v0.2.0-model-SenseVoice-Small.zip\n\n"
                     L"2. 解压后放到 models/SenseVoice-Small/ 目录\n"
                     L"   最终路径应该是: models/SenseVoice-Small/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/model.onnx\n\n"
                     L"3. 重启 PowerCapslock 即可使用",
@@ -121,7 +121,7 @@ static BOOL InitializeModules(void) {
 
                 // 打开浏览器下载页面
                 ShellExecuteW(NULL, L"open",
-                    L"https://github.com/HaujetZhao/CapsWriter-Offline/releases/tag/models",
+                    L"https://github.com/IamJohnRain/PowerCapslock/releases/tag/v0.2.0",
                     NULL, NULL, SW_SHOWNORMAL);
 
                 // 保存配置
