@@ -26,4 +26,6 @@ bool HookHandleMessage(const MSG* msg);
 // 运行 CapsLock+A 自测，slowStartDelayMs 用于模拟慢速语音启动
 bool HookRunCapsLockATest(DWORD slowStartDelayMs, const char* outputPath);
 
+bool HookRunKeyMappingTest(WORD scanCode, UINT expectedVk, const char* outputPath);
+
 #endif // HOOK_H

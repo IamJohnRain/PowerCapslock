@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <wchar.h>
 
 // Control IDs matching resource.rc
 #define IDD_CONFIG_DIALOG    200
@@ -25,8 +26,14 @@
 #define IDC_FROM_KEY        301
 #define IDC_TO_KEY          302
 
+#ifndef ARRAYSIZE
+#define ARRAYSIZE(a) (sizeof(a) / sizeof((a)[0]))
+#endif
+
 // 需要链接 common controls v6 用于可视化样式
+#ifdef _MSC_VER
 #pragma comment(linker,"\"/manifestdependency:type='common_controls' version='6.0.0.0' processorArchitecture='*' name='Microsoft.Windows.Common-Controls'\"")
+#endif
 
 // 对话框全局状态（模态对话框，所以可以用静态变量）
 static HWND g_hDlg;
@@ -37,6 +44,22 @@ static HWND g_hMappingList;
 static int g_currentTab;
 static Config g_workingConfig;
 static bool g_needRebuildMappings = false;
+static HFONT g_hTitleFont = NULL;
+static HFONT g_hSectionFont = NULL;
+static HBRUSH g_hBgBrush = NULL;
+static HBRUSH g_hPanelBrush = NULL;
+static HBRUSH g_hPanelAltBrush = NULL;
+static HBRUSH g_hEditBrush = NULL;
+
+static const COLORREF COLOR_BG = RGB(13, 18, 25);
+static const COLORREF COLOR_PANEL = RGB(24, 31, 41);
+static const COLORREF COLOR_PANEL_ALT = RGB(31, 42, 55);
+static const COLORREF COLOR_EDIT = RGB(18, 25, 34);
+static const COLORREF COLOR_TEXT = RGB(235, 246, 255);
+static const COLORREF COLOR_MUTED = RGB(151, 170, 190);
+static const COLORREF COLOR_ACCENT = RGB(0, 214, 255);
+static const COLORREF COLOR_ACCENT_GREEN = RGB(92, 255, 177);
+static const COLORREF COLOR_ACCENT_CORAL = RGB(255, 112, 91);
 
 // 控件句柄数组，用于切换标签时销毁
 static HWND g_tabControls[2][20];
@@ -58,17 +81,99 @@ static bool AddOrEditMapping(HWND hParent, bool isEdit, int selectedIndex);
 static void OnOK(HWND hDlg);
 static void OnCancel(HWND hDlg);
 static void ClearTabControls(int tabIndex);
+static void CapturePathEdits(void);
+static void InitDialogFonts(HWND hDlg);
+static void CleanupDialogFonts(void);
+static void ApplySectionFont(HWND hWnd);
+static void PaintConfigDialog(HWND hDlg);
+static HBRUSH HandleCtlColor(HWND hCtrl, HDC hdc, UINT msg);
+static void DrawOwnerButton(const DRAWITEMSTRUCT* dis);
+static void DrawOwnerTab(const DRAWITEMSTRUCT* dis);
+static LRESULT DrawMappingListItem(NMLVCUSTOMDRAW* draw);
+static void Utf8ToWide(const char* source, wchar_t* dest, int destCount);
+static void WideToUtf8(const wchar_t* source, char* dest, int destCount);
+static void SetEditTextUtf8(HWND hWnd, const char* text);
+static void GetEditTextUtf8(HWND hWnd, char* dest, int destCount);
+static void ExtractMappingNames(const char* mappingName, char* fromName, size_t fromSize, char* toName, size_t toSize);
+static const wchar_t* KeyDisplayNameW(const char* key, wchar_t* fallback, size_t fallbackCount);
 
-// Helper: Map rectangle from one window's coordinate system to another
-static void MapWindowRect(HWND fromWnd, HWND toWnd, RECT* rc) {
-    POINT topLeft = {rc->left, rc->top};
-    POINT bottomRight = {rc->right, rc->bottom};
-    MapWindowPoints(fromWnd, toWnd, &topLeft, 1);
-    MapWindowPoints(fromWnd, toWnd, &bottomRight, 1);
-    rc->left = topLeft.x;
-    rc->top = topLeft.y;
-    rc->right = bottomRight.x;
-    rc->bottom = bottomRight.y;
+static void ApplyDialogFont(HWND hWnd) {
+    HFONT hFont = (HFONT)SendMessage(g_hDlg, WM_GETFONT, 0, 0);
+    if (hWnd != NULL && hFont != NULL) {
+        SendMessage(hWnd, WM_SETFONT, (WPARAM)hFont, TRUE);
+    }
+}
+
+static void TrackTabControl(int tabIndex, HWND hWnd) {
+    if (hWnd == NULL || g_tabControlCount[tabIndex] >= 20) {
+        return;
+    }
+    ApplyDialogFont(hWnd);
+    g_tabControls[tabIndex][g_tabControlCount[tabIndex]++] = hWnd;
+}
+
+static void InitDialogFonts(HWND hDlg) {
+    HFONT hFont = (HFONT)SendMessage(hDlg, WM_GETFONT, 0, 0);
+    LOGFONTW lf;
+    HDC hdc = GetDC(hDlg);
+    int dpi = (hdc != NULL) ? GetDeviceCaps(hdc, LOGPIXELSY) : 96;
+    if (hdc != NULL) {
+        ReleaseDC(hDlg, hdc);
+    }
+
+    CleanupDialogFonts();
+    ZeroMemory(&lf, sizeof(lf));
+    if (hFont == NULL || GetObjectW(hFont, sizeof(lf), &lf) == 0) {
+        lf.lfCharSet = DEFAULT_CHARSET;
+        lf.lfQuality = CLEARTYPE_QUALITY;
+    }
+    lstrcpynW(lf.lfFaceName, L"Microsoft YaHei UI", LF_FACESIZE);
+
+    lf.lfHeight = -MulDiv(18, dpi, 72);
+    lf.lfWeight = FW_BOLD;
+    g_hTitleFont = CreateFontIndirectW(&lf);
+
+    lf.lfHeight = -MulDiv(10, dpi, 72);
+    lf.lfWeight = FW_SEMIBOLD;
+    g_hSectionFont = CreateFontIndirectW(&lf);
+
+    g_hBgBrush = CreateSolidBrush(COLOR_BG);
+    g_hPanelBrush = CreateSolidBrush(COLOR_PANEL);
+    g_hPanelAltBrush = CreateSolidBrush(COLOR_PANEL_ALT);
+    g_hEditBrush = CreateSolidBrush(COLOR_EDIT);
+}
+
+static void CleanupDialogFonts(void) {
+    if (g_hTitleFont != NULL) {
+        DeleteObject(g_hTitleFont);
+        g_hTitleFont = NULL;
+    }
+    if (g_hSectionFont != NULL) {
+        DeleteObject(g_hSectionFont);
+        g_hSectionFont = NULL;
+    }
+    if (g_hBgBrush != NULL) {
+        DeleteObject(g_hBgBrush);
+        g_hBgBrush = NULL;
+    }
+    if (g_hPanelBrush != NULL) {
+        DeleteObject(g_hPanelBrush);
+        g_hPanelBrush = NULL;
+    }
+    if (g_hPanelAltBrush != NULL) {
+        DeleteObject(g_hPanelAltBrush);
+        g_hPanelAltBrush = NULL;
+    }
+    if (g_hEditBrush != NULL) {
+        DeleteObject(g_hEditBrush);
+        g_hEditBrush = NULL;
+    }
+}
+
+static void ApplySectionFont(HWND hWnd) {
+    if (hWnd != NULL && g_hSectionFont != NULL) {
+        SendMessage(hWnd, WM_SETFONT, (WPARAM)g_hSectionFont, TRUE);
+    }
 }
 
 // 标签索引
@@ -76,10 +181,271 @@ static void MapWindowRect(HWND fromWnd, HWND toWnd, RECT* rc) {
 #define TAB_MAPPING 1
 #define TAB_COUNT  2
 
-static const char* tabTitles[TAB_COUNT] = {
-    "General",
-    "Key Mappings"
+static const wchar_t* tabTitles[TAB_COUNT] = {
+    L"基础设置",
+    L"快捷映射"
 };
+
+static void FillRoundRect(HDC hdc, const RECT* rc, COLORREF fill, COLORREF border) {
+    HBRUSH brush = CreateSolidBrush(fill);
+    HPEN pen = CreatePen(PS_SOLID, 1, border);
+    HGDIOBJ oldBrush = SelectObject(hdc, brush);
+    HGDIOBJ oldPen = SelectObject(hdc, pen);
+    RoundRect(hdc, rc->left, rc->top, rc->right, rc->bottom, 8, 8);
+    SelectObject(hdc, oldBrush);
+    SelectObject(hdc, oldPen);
+    DeleteObject(brush);
+    DeleteObject(pen);
+}
+
+static void PaintConfigDialog(HWND hDlg) {
+    PAINTSTRUCT ps;
+    HDC hdc = BeginPaint(hDlg, &ps);
+    RECT rc;
+    GetClientRect(hDlg, &rc);
+
+    FillRect(hdc, &rc, g_hBgBrush != NULL ? g_hBgBrush : GetSysColorBrush(COLOR_WINDOW));
+
+    RECT header = {0, 0, rc.right, 62};
+    HBRUSH headerBrush = CreateSolidBrush(RGB(16, 23, 33));
+    FillRect(hdc, &header, headerBrush);
+    DeleteObject(headerBrush);
+
+    RECT accent = {18, 54, 190, 58};
+    HBRUSH accentBrush = CreateSolidBrush(COLOR_ACCENT);
+    FillRect(hdc, &accent, accentBrush);
+    accent.left = 198;
+    accent.right = 278;
+    DeleteObject(accentBrush);
+    accentBrush = CreateSolidBrush(COLOR_ACCENT_GREEN);
+    FillRect(hdc, &accent, accentBrush);
+    DeleteObject(accentBrush);
+
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, COLOR_TEXT);
+    HGDIOBJ oldFont = NULL;
+    if (g_hTitleFont != NULL) {
+        oldFont = SelectObject(hdc, g_hTitleFont);
+    }
+    RECT title = {18, 11, rc.right - 18, 36};
+    DrawTextW(hdc, L"设置中心", -1, &title, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    if (oldFont != NULL) {
+        SelectObject(hdc, oldFont);
+    }
+
+    SetTextColor(hdc, COLOR_MUTED);
+    RECT subtitle = {18, 34, rc.right - 18, 52};
+    DrawTextW(hdc, L"管理日志、模型路径，以及 CapsLock 快捷映射。", -1, &subtitle,
+              DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+    RECT panel = {16, 96, rc.right - 16, rc.bottom - 74};
+    FillRoundRect(hdc, &panel, COLOR_PANEL, RGB(54, 71, 88));
+
+    RECT sideAccent = {16, 114, 20, rc.bottom - 94};
+    HBRUSH greenBrush = CreateSolidBrush(COLOR_ACCENT_GREEN);
+    FillRect(hdc, &sideAccent, greenBrush);
+    DeleteObject(greenBrush);
+
+    EndPaint(hDlg, &ps);
+}
+
+static HBRUSH HandleCtlColor(HWND hCtrl, HDC hdc, UINT msg) {
+    SetBkMode(hdc, TRANSPARENT);
+
+    if (msg == WM_CTLCOLOREDIT) {
+        SetTextColor(hdc, COLOR_TEXT);
+        SetBkColor(hdc, COLOR_EDIT);
+        return g_hEditBrush != NULL ? g_hEditBrush : GetSysColorBrush(COLOR_WINDOW);
+    }
+
+    if (msg == WM_CTLCOLORBTN) {
+        SetTextColor(hdc, COLOR_TEXT);
+        SetBkColor(hdc, COLOR_PANEL_ALT);
+        return g_hPanelAltBrush != NULL ? g_hPanelAltBrush : GetSysColorBrush(COLOR_WINDOW);
+    }
+
+    SetTextColor(hdc, COLOR_TEXT);
+    if (hCtrl != NULL && GetParent(hCtrl) == g_hDlg) {
+        return g_hPanelBrush != NULL ? g_hPanelBrush : GetSysColorBrush(COLOR_WINDOW);
+    }
+    return g_hBgBrush != NULL ? g_hBgBrush : GetSysColorBrush(COLOR_WINDOW);
+}
+
+static void DrawOwnerButton(const DRAWITEMSTRUCT* dis) {
+    RECT rc = dis->rcItem;
+    int id = (int)dis->CtlID;
+    bool pressed = (dis->itemState & ODS_SELECTED) != 0;
+    bool disabled = (dis->itemState & ODS_DISABLED) != 0;
+    COLORREF fill = COLOR_PANEL_ALT;
+    COLORREF border = RGB(72, 92, 112);
+    COLORREF text = COLOR_TEXT;
+
+    if (id == IDOK || id == IDC_BTN_ADD) {
+        fill = pressed ? RGB(58, 205, 150) : COLOR_ACCENT_GREEN;
+        border = RGB(126, 255, 204);
+        text = RGB(6, 20, 22);
+    } else if (id == IDC_BTN_EDIT || id == IDC_BROWSE_LOG || id == IDC_BROWSE_MODEL) {
+        fill = pressed ? RGB(0, 160, 205) : COLOR_ACCENT;
+        border = RGB(122, 234, 255);
+        text = RGB(5, 18, 24);
+    } else if (id == IDC_BTN_REMOVE) {
+        fill = pressed ? RGB(214, 83, 70) : COLOR_ACCENT_CORAL;
+        border = RGB(255, 168, 151);
+        text = RGB(28, 8, 8);
+    }
+
+    if (disabled) {
+        fill = RGB(45, 52, 62);
+        border = RGB(76, 84, 96);
+        text = RGB(130, 140, 154);
+    }
+
+    if (pressed) {
+        OffsetRect(&rc, 1, 1);
+    }
+    FillRoundRect(dis->hDC, &rc, fill, border);
+
+    wchar_t label[64];
+    GetWindowTextW(dis->hwndItem, label, (int)ARRAYSIZE(label));
+    SetBkMode(dis->hDC, TRANSPARENT);
+    SetTextColor(dis->hDC, text);
+    DrawTextW(dis->hDC, label, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+    if ((dis->itemState & ODS_FOCUS) != 0) {
+        InflateRect(&rc, -3, -3);
+        DrawFocusRect(dis->hDC, &rc);
+    }
+}
+
+static void DrawOwnerTab(const DRAWITEMSTRUCT* dis) {
+    if (dis->itemID >= TAB_COUNT) {
+        return;
+    }
+
+    RECT rc = dis->rcItem;
+    InflateRect(&rc, -2, -2);
+    bool selected = ((int)dis->itemID == TabCtrl_GetCurSel(dis->hwndItem));
+    COLORREF fill = selected ? COLOR_PANEL_ALT : RGB(17, 24, 34);
+    COLORREF border = selected ? COLOR_ACCENT : RGB(60, 78, 96);
+    COLORREF text = selected ? COLOR_ACCENT_GREEN : COLOR_MUTED;
+
+    FillRoundRect(dis->hDC, &rc, fill, border);
+    SetBkMode(dis->hDC, TRANSPARENT);
+    SetTextColor(dis->hDC, text);
+    DrawTextW(dis->hDC, tabTitles[dis->itemID], -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+}
+
+static LRESULT DrawMappingListItem(NMLVCUSTOMDRAW* draw) {
+    switch (draw->nmcd.dwDrawStage) {
+        case CDDS_PREPAINT:
+            return CDRF_NOTIFYITEMDRAW;
+        case CDDS_ITEMPREPAINT:
+            draw->clrText = COLOR_TEXT;
+            draw->clrTextBk = (draw->nmcd.uItemState & CDIS_SELECTED) ? RGB(35, 78, 98) : COLOR_PANEL;
+            return CDRF_NEWFONT;
+        default:
+            return CDRF_DODEFAULT;
+    }
+}
+
+static void Utf8ToWide(const char* source, wchar_t* dest, int destCount) {
+    if (dest == NULL || destCount <= 0) {
+        return;
+    }
+    dest[0] = L'\0';
+    if (source == NULL || source[0] == '\0') {
+        return;
+    }
+    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, source, -1, dest, destCount) == 0) {
+        MultiByteToWideChar(CP_ACP, 0, source, -1, dest, destCount);
+    }
+    dest[destCount - 1] = L'\0';
+}
+
+static void WideToUtf8(const wchar_t* source, char* dest, int destCount) {
+    if (dest == NULL || destCount <= 0) {
+        return;
+    }
+    dest[0] = '\0';
+    if (source == NULL || source[0] == L'\0') {
+        return;
+    }
+    WideCharToMultiByte(CP_UTF8, 0, source, -1, dest, destCount, NULL, NULL);
+    dest[destCount - 1] = '\0';
+}
+
+static void SetEditTextUtf8(HWND hWnd, const char* text) {
+    wchar_t wide[MAX_PATH];
+    Utf8ToWide(text, wide, (int)ARRAYSIZE(wide));
+    SetWindowTextW(hWnd, wide);
+}
+
+static void GetEditTextUtf8(HWND hWnd, char* dest, int destCount) {
+    wchar_t wide[MAX_PATH];
+    GetWindowTextW(hWnd, wide, (int)ARRAYSIZE(wide));
+    WideToUtf8(wide, dest, destCount);
+}
+
+static void ExtractMappingNames(const char* mappingName, char* fromName, size_t fromSize, char* toName, size_t toSize) {
+    const char* arrow;
+    size_t len;
+
+    if (fromSize > 0) {
+        fromName[0] = '\0';
+    }
+    if (toSize > 0) {
+        toName[0] = '\0';
+    }
+    if (mappingName == NULL) {
+        return;
+    }
+
+    arrow = strstr(mappingName, "->");
+    if (arrow != NULL) {
+        len = (size_t)(arrow - mappingName);
+        if (fromSize > 0) {
+            if (len >= fromSize) {
+                len = fromSize - 1;
+            }
+            memcpy(fromName, mappingName, len);
+            fromName[len] = '\0';
+        }
+        if (toSize > 0) {
+            snprintf(toName, toSize, "%s", arrow + 2);
+        }
+    } else {
+        if (fromSize > 0) {
+            snprintf(fromName, fromSize, "%s", mappingName);
+        }
+        if (toSize > 0) {
+            snprintf(toName, toSize, "%s", mappingName);
+        }
+    }
+}
+
+typedef struct {
+    const char* key;
+    const wchar_t* display;
+} KeyDisplayEntryW;
+
+static const KeyDisplayEntryW keyDisplayTable[] = {
+    {"LEFT", L"← 左方向"}, {"RIGHT", L"→ 右方向"}, {"UP", L"↑ 上方向"}, {"DOWN", L"↓ 下方向"},
+    {"HOME", L"Home 行首"}, {"END", L"End 行尾"}, {"PAGEUP", L"PageUp 上翻页"}, {"PAGEDOWN", L"PageDown 下翻页"},
+    {"DELETE", L"Delete 删除"}, {"INSERT", L"Insert 插入"}, {"ESCAPE", L"Esc 退出"}, {"ENTER", L"Enter 回车"},
+    {"BACKSPACE", L"Backspace 退格"}, {"SPACE", L"Space 空格"}, {"TAB", L"Tab 制表"},
+    {"MINUS", L"- 减号"}, {"EQUAL", L"= 等号"},
+    {NULL, NULL}
+};
+
+static const wchar_t* KeyDisplayNameW(const char* key, wchar_t* fallback, size_t fallbackCount) {
+    for (int i = 0; keyDisplayTable[i].key != NULL; i++) {
+        if (_stricmp(keyDisplayTable[i].key, key) == 0) {
+            return keyDisplayTable[i].display;
+        }
+    }
+    Utf8ToWide(key, fallback, (int)fallbackCount);
+    return fallback;
+}
 
 bool ShowConfigDialog(HWND hParent) {
     // Initialize common controls
@@ -110,7 +476,42 @@ static INT_PTR CALLBACK ConfigDialogProc(HWND hDlg, UINT msg, WPARAM wParam, LPA
             OnInitDialog(hDlg);
             return (INT_PTR)TRUE;
 
+        case WM_PAINT:
+            PaintConfigDialog(hDlg);
+            return (INT_PTR)TRUE;
+
+        case WM_ERASEBKGND: {
+            HDC hdc = (HDC)wParam;
+            RECT rc;
+            GetClientRect(hDlg, &rc);
+            FillRect(hdc, &rc, g_hBgBrush != NULL ? g_hBgBrush : GetSysColorBrush(COLOR_WINDOW));
+            RECT panel = {16, 96, rc.right - 16, rc.bottom - 74};
+            FillRoundRect(hdc, &panel, COLOR_PANEL, RGB(54, 71, 88));
+            return (INT_PTR)TRUE;
+        }
+
+        case WM_CTLCOLORDLG:
+        case WM_CTLCOLORSTATIC:
+        case WM_CTLCOLOREDIT:
+        case WM_CTLCOLORBTN:
+            return (INT_PTR)HandleCtlColor((HWND)lParam, (HDC)wParam, msg);
+
+        case WM_DRAWITEM:
+            if (wParam == IDC_TAB) {
+                DrawOwnerTab((const DRAWITEMSTRUCT*)lParam);
+                return (INT_PTR)TRUE;
+            }
+            DrawOwnerButton((const DRAWITEMSTRUCT*)lParam);
+            return (INT_PTR)TRUE;
+
+        case WM_NCDESTROY:
+            CleanupDialogFonts();
+            return (INT_PTR)FALSE;
+
         case WM_NOTIFY:
+            if (((NMHDR*)lParam)->hwndFrom == g_hMappingList && ((NMHDR*)lParam)->code == NM_CUSTOMDRAW) {
+                return (INT_PTR)DrawMappingListItem((NMLVCUSTOMDRAW*)lParam);
+            }
             switch (((NMHDR*)lParam)->code) {
                 case TCN_SELCHANGE:
                     OnTabChange(hDlg);
@@ -156,9 +557,7 @@ static INT_PTR CALLBACK ConfigDialogProc(HWND hDlg, UINT msg, WPARAM wParam, LPA
             } else {
                 CreateTab2Controls(hDlg);
             }
-            // Ensure the tab control stays behind our content controls
-            SetWindowPos(g_hTab, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
-            // Force a final repaint to ensure all content is drawn on top
+            SetWindowPos(g_hTab, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
             InvalidateRect(hDlg, NULL, TRUE);
             UpdateWindow(hDlg);
             return (INT_PTR)TRUE;
@@ -173,26 +572,34 @@ static void OnInitDialog(HWND hDlg) {
     g_currentTab = TAB_BASIC;
     g_tabControlCount[0] = 0;
     g_tabControlCount[1] = 0;
+    InitDialogFonts(hDlg);
 
-    // Add tabs
-    TCITEM tie;
+    LONG_PTR style = GetWindowLongPtr(g_hTab, GWL_STYLE);
+    SetWindowLongPtr(g_hTab, GWL_STYLE,
+                     style | TCS_OWNERDRAWFIXED | TCS_FIXEDWIDTH | TCS_BUTTONS | TCS_FLATBUTTONS);
+    MoveWindow(g_hTab, 18, 62, 282, 30, TRUE);
+    SetWindowPos(g_hTab, NULL, 18, 62, 282, 30, SWP_NOZORDER | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+    TabCtrl_SetItemSize(g_hTab, 134, 28);
+
+    TCITEMW tie;
+    ZeroMemory(&tie, sizeof(tie));
     tie.mask = TCIF_TEXT;
     for (int i = 0; i < TAB_COUNT; i++) {
-        tie.pszText = (char*)tabTitles[i];
-        TabCtrl_InsertItem(g_hTab, i, &tie);
+        tie.pszText = (LPWSTR)tabTitles[i];
+        SendMessageW(g_hTab, TCM_INSERTITEMW, (WPARAM)i, (LPARAM)&tie);
     }
 
-    // Explicitly select the first tab
     TabCtrl_SetCurSel(g_hTab, g_currentTab);
 
-    // Use a timer to create initial content after the dialog is completely shown and tab control has finished painting
-    // This guarantees our content gets painted on top and isn't overwritten
     SetTimer(hDlg, 1, 10, NULL);
 }
 
 static void OnTabChange(HWND hDlg) {
     int newTab = TabCtrl_GetCurSel(g_hTab);
     if (newTab != g_currentTab) {
+        if (g_currentTab == TAB_BASIC) {
+            CapturePathEdits();
+        }
         ClearTabControls(g_currentTab);
         g_currentTab = newTab;
         if (newTab == TAB_BASIC) {
@@ -200,213 +607,233 @@ static void OnTabChange(HWND hDlg) {
         } else {
             CreateTab2Controls(hDlg);
         }
-        // Ensure the tab control stays behind our content controls
-        SetWindowPos(g_hTab, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+        SetWindowPos(g_hTab, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+        InvalidateRect(hDlg, NULL, TRUE);
     }
 }
 
 static void CreateTab1Controls(HWND hDlg) {
     RECT rcTab;
-    // Get the tab control's client rectangle (relative to itself)
-    GetClientRect(g_hTab, &rcTab);
+    int left;
+    int right;
+    int top;
+    int labelW = 82;
+    int browseW = 86;
+    int gap = 10;
+    int editH = 26;
+    int rowGap = 46;
+    int editX;
+    int editW;
 
-    LOG_DEBUG("CreateTab1Controls: tab rect in tab client coords: (%d,%d)-(%d,%d)", rcTab.left, rcTab.top, rcTab.right, rcTab.bottom);
+    GetClientRect(hDlg, &rcTab);
+    rcTab.left = 32;
+    rcTab.top = 112;
+    rcTab.right -= 32;
+    rcTab.bottom -= 104;
 
-    // Adjust rect to get the area where content should go (removes the tab buttons area at top)
-    // Since we're creating content as children of the tab, coordinates stay relative to tab client area
-    TabCtrl_AdjustRect(g_hTab, FALSE, &rcTab);
+    left = rcTab.left;
+    right = rcTab.right;
+    top = rcTab.top;
+    editX = left + labelW;
+    editW = right - editX - browseW - gap;
 
-    LOG_DEBUG("CreateTab1Controls: after TabCtrl_AdjustRect: (%d,%d)-(%d,%d)", rcTab.left, rcTab.top, rcTab.right, rcTab.bottom);
+    HWND hStatic = CreateWindowExW(0, L"STATIC", L"路径与存储", WS_CHILD | SS_LEFT | WS_VISIBLE,
+        left, top, 240, 20, hDlg, NULL, GetModuleHandle(NULL), NULL);
+    TrackTabControl(TAB_BASIC, hStatic);
+    ApplySectionFont(hStatic);
 
-    // Add extra margin to ensure content starts completely below the tab header
-    // TabCtrl_AdjustRect sometimes gives us a rect that starts too high overlapping the tab buttons
-    // Add extra to ensure multiple controls fall into different sampling rows for the automated test
-    rcTab.top += 35;
-    // Force a minimum top to ensure content starts below the tab header
-    if (rcTab.top < 60) {
-        rcTab.top = 60;
-    }
+    hStatic = CreateWindowExW(0, L"STATIC", L"日志和模型目录会写入当前用户配置。", WS_CHILD | SS_LEFT | WS_VISIBLE,
+        left, top + 21, right - left, 18, hDlg, NULL, GetModuleHandle(NULL), NULL);
+    TrackTabControl(TAB_BASIC, hStatic);
 
-    // Static: Log Directory
-    HWND hStatic = CreateWindowExA(0, "STATIC", "Log Directory:", WS_CHILD | SS_LEFT | SS_WHITERECT | WS_VISIBLE,
-        rcTab.left, rcTab.top, 80, 20, g_hTab, NULL, GetModuleHandle(NULL), NULL);
-    g_tabControls[TAB_BASIC][g_tabControlCount[TAB_BASIC]++] = hStatic;
+    top += 54;
 
-    // Edit: Log Path
-    g_hLogEdit = CreateWindowExA(0, "EDIT", NULL, WS_CHILD | WS_BORDER | ES_AUTOHSCROLL | WS_VISIBLE,
-        rcTab.left + 85, rcTab.top, rcTab.right - 160, 22, g_hTab, NULL, GetModuleHandle(NULL), NULL);
-    g_tabControls[TAB_BASIC][g_tabControlCount[TAB_BASIC]++] = g_hLogEdit;
-    SetWindowTextA(g_hLogEdit, g_workingConfig.logDirPath);
+    hStatic = CreateWindowExW(0, L"STATIC", L"日志目录", WS_CHILD | SS_LEFT | WS_VISIBLE,
+        left, top + 4, labelW - 12, 20, hDlg, NULL, GetModuleHandle(NULL), NULL);
+    TrackTabControl(TAB_BASIC, hStatic);
 
-    // Browse button
-    HWND hBtn = CreateWindowExA(0, "BUTTON", "Browse...", WS_TABSTOP | BS_PUSHBUTTON | WS_CHILD | WS_VISIBLE,
-        rcTab.right - 70, rcTab.top, 65, 25, g_hTab, (HMENU)IDC_BROWSE_LOG, GetModuleHandle(NULL), NULL);
-    g_tabControls[TAB_BASIC][g_tabControlCount[TAB_BASIC]++] = hBtn;
+    g_hLogEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", NULL, WS_CHILD | ES_AUTOHSCROLL | WS_VISIBLE,
+        editX, top, editW, editH, hDlg, (HMENU)IDC_LOG_PATH, GetModuleHandle(NULL), NULL);
+    TrackTabControl(TAB_BASIC, g_hLogEdit);
+    SetEditTextUtf8(g_hLogEdit, g_workingConfig.logDirPath);
 
-    // Static: Model Directory
-    hStatic = CreateWindowExA(0, "STATIC", "Model Directory:", WS_CHILD | SS_LEFT | SS_WHITERECT | WS_VISIBLE,
-        rcTab.left, rcTab.top + 35, 80, 20, g_hTab, NULL, GetModuleHandle(NULL), NULL);
-    g_tabControls[TAB_BASIC][g_tabControlCount[TAB_BASIC]++] = hStatic;
+    HWND hBtn = CreateWindowExW(0, L"BUTTON", L"浏览...", WS_TABSTOP | BS_PUSHBUTTON | BS_OWNERDRAW | WS_CHILD | WS_VISIBLE,
+        right - browseW, top - 1, browseW, editH + 2, hDlg, (HMENU)IDC_BROWSE_LOG, GetModuleHandle(NULL), NULL);
+    TrackTabControl(TAB_BASIC, hBtn);
 
-    // Edit: Model Path
-    g_hModelEdit = CreateWindowExA(0, "EDIT", NULL, WS_CHILD | WS_BORDER | ES_AUTOHSCROLL | WS_VISIBLE,
-        rcTab.left + 85, rcTab.top + 35, rcTab.right - 160, 22, g_hTab, NULL, GetModuleHandle(NULL), NULL);
-    g_tabControls[TAB_BASIC][g_tabControlCount[TAB_BASIC]++] = g_hModelEdit;
-    SetWindowTextA(g_hModelEdit, g_workingConfig.modelDirPath);
+    top += rowGap;
 
-    // Browse button
-    hBtn = CreateWindowExA(0, "BUTTON", "Browse...", WS_TABSTOP | BS_PUSHBUTTON | WS_CHILD | WS_VISIBLE,
-        rcTab.right - 70, rcTab.top + 35, 65, 25, g_hTab, (HMENU)IDC_BROWSE_MODEL, GetModuleHandle(NULL), NULL);
-    g_tabControls[TAB_BASIC][g_tabControlCount[TAB_BASIC]++] = hBtn;
+    hStatic = CreateWindowExW(0, L"STATIC", L"模型目录", WS_CHILD | SS_LEFT | WS_VISIBLE,
+        left, top + 4, labelW - 12, 20, hDlg, NULL, GetModuleHandle(NULL), NULL);
+    TrackTabControl(TAB_BASIC, hStatic);
 
-    // Ensure all content controls are on top of the tab control
+    g_hModelEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", NULL, WS_CHILD | ES_AUTOHSCROLL | WS_VISIBLE,
+        editX, top, editW, editH, hDlg, (HMENU)IDC_MODEL_PATH, GetModuleHandle(NULL), NULL);
+    TrackTabControl(TAB_BASIC, g_hModelEdit);
+    SetEditTextUtf8(g_hModelEdit, g_workingConfig.modelDirPath);
+
+    hBtn = CreateWindowExW(0, L"BUTTON", L"浏览...", WS_TABSTOP | BS_PUSHBUTTON | BS_OWNERDRAW | WS_CHILD | WS_VISIBLE,
+        right - browseW, top - 1, browseW, editH + 2, hDlg, (HMENU)IDC_BROWSE_MODEL, GetModuleHandle(NULL), NULL);
+    TrackTabControl(TAB_BASIC, hBtn);
+
+    top += rowGap + 2;
+
+    hStatic = CreateWindowExW(0, L"STATIC", L"建议使用绝对路径。修改日志或模型目录后，重启程序即可写入新位置。",
+        WS_CHILD | SS_LEFT | WS_VISIBLE, editX, top, right - editX, 34, hDlg, NULL, GetModuleHandle(NULL), NULL);
+    TrackTabControl(TAB_BASIC, hStatic);
+
     for (int i = 0; i < g_tabControlCount[TAB_BASIC]; i++) {
         SetWindowPos(g_tabControls[TAB_BASIC][i], HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
     }
 
     LOG_DEBUG("CreateTab1Controls: created %d controls", g_tabControlCount[TAB_BASIC]);
-
-    // Just force repaint to ensure everything is visible
     InvalidateRect(hDlg, &rcTab, TRUE);
     UpdateWindow(hDlg);
 }
 
 static void CreateTab2Controls(HWND hDlg) {
     RECT rcTab;
-    // Get the tab control's client rectangle (relative to itself)
-    GetClientRect(g_hTab, &rcTab);
+    int left;
+    int right;
+    int top;
+    int bottom;
+    int btnW = 96;
+    int btnH = 30;
+    int btnGap = 8;
+    int btnX;
+    int btnY;
+    int listW;
+    int listH;
 
-    // Adjust rect to get the area where content should go (removes the tab buttons area at top)
-    // Since we're creating content as children of the tab, coordinates stay relative to tab client area
-    TabCtrl_AdjustRect(g_hTab, FALSE, &rcTab);
+    GetClientRect(hDlg, &rcTab);
+    rcTab.left = 32;
+    rcTab.top = 112;
+    rcTab.right -= 32;
+    rcTab.bottom -= 104;
 
-    // Add extra margin to ensure content starts completely below the tab header
-    // TabCtrl_AdjustRect sometimes gives us a rect that starts too high overlapping the tab buttons
-    // Add extra to ensure multiple controls fall into different sampling rows for the automated test
-    rcTab.top += 35;
-    // Force a minimum top to ensure content starts below the tab header
-    if (rcTab.top < 60) {
-        rcTab.top = 60;
-    }
+    left = rcTab.left;
+    right = rcTab.right;
+    top = rcTab.top;
+    bottom = rcTab.bottom;
+    btnX = right - btnW;
+    btnY = top + 46;
+    listW = btnX - left - 14;
+    listH = bottom - (top + 46);
 
-    // No extra margin on sides, just subtract space for buttons
-    rcTab.bottom -= 45;  // leave space for buttons on the right side
+    HWND hStatic = CreateWindowExW(0, L"STATIC", L"CapsLock 快捷映射", WS_CHILD | SS_LEFT | WS_VISIBLE,
+        left, top, 220, 20, hDlg, NULL, GetModuleHandle(NULL), NULL);
+    TrackTabControl(TAB_MAPPING, hStatic);
+    ApplySectionFont(hStatic);
 
-    // ListView for mappings
-    DWORD listStyle = LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | WS_BORDER | WS_CHILD | WS_VISIBLE;
-    g_hMappingList = CreateWindowExA(0, WC_LISTVIEW, NULL, listStyle,
-        rcTab.left, rcTab.top, rcTab.right - 90, rcTab.bottom - rcTab.top, g_hTab, (HMENU)IDC_MAPPING_LIST, GetModuleHandle(NULL), NULL);
-    g_tabControls[TAB_MAPPING][g_tabControlCount[TAB_MAPPING]++] = g_hMappingList;
+    hStatic = CreateWindowExW(0, L"STATIC", L"按住 CapsLock，再按触发键，即可发送目标按键。",
+        WS_CHILD | SS_LEFT | WS_VISIBLE, left, top + 21, right - left, 18, hDlg, NULL, GetModuleHandle(NULL), NULL);
+    TrackTabControl(TAB_MAPPING, hStatic);
 
-    // Add columns
-    LVCOLUMN lvc;
+    DWORD listStyle = LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | WS_CHILD | WS_VISIBLE | WS_TABSTOP;
+    g_hMappingList = CreateWindowExW(WS_EX_CLIENTEDGE, WC_LISTVIEWW, NULL, listStyle,
+        left, top + 46, listW, listH, hDlg, (HMENU)IDC_MAPPING_LIST, GetModuleHandle(NULL), NULL);
+    TrackTabControl(TAB_MAPPING, g_hMappingList);
+    ListView_SetExtendedListViewStyle(g_hMappingList,
+        LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_DOUBLEBUFFER | LVS_EX_LABELTIP);
+    ListView_SetBkColor(g_hMappingList, COLOR_PANEL);
+    ListView_SetTextBkColor(g_hMappingList, COLOR_PANEL);
+    ListView_SetTextColor(g_hMappingList, COLOR_TEXT);
+
+    LVCOLUMNW lvc;
+    ZeroMemory(&lvc, sizeof(lvc));
     lvc.mask = LVCF_FMT | LVCF_WIDTH | LVCF_TEXT;
 
-    lvc.pszText = "From";
-    lvc.cx = 70;
+    lvc.pszText = L"触发键";
+    lvc.cx = 82;
     lvc.fmt = LVCFMT_LEFT;
-    ListView_InsertColumn(g_hMappingList, 0, &lvc);
+    SendMessageW(g_hMappingList, LVM_INSERTCOLUMNW, 0, (LPARAM)&lvc);
 
-    lvc.pszText = "To";
-    lvc.cx = 70;
+    lvc.pszText = L"输出键";
+    lvc.cx = 96;
     lvc.fmt = LVCFMT_LEFT;
-    ListView_InsertColumn(g_hMappingList, 1, &lvc);
+    SendMessageW(g_hMappingList, LVM_INSERTCOLUMNW, 1, (LPARAM)&lvc);
 
-    lvc.pszText = "Name";
-    lvc.cx = rcTab.right - 90 - 150;
+    lvc.pszText = L"动作说明";
+    lvc.cx = listW - 192;
+    if (lvc.cx < 150) {
+        lvc.cx = 150;
+    }
     lvc.fmt = LVCFMT_LEFT;
-    ListView_InsertColumn(g_hMappingList, 2, &lvc);
+    SendMessageW(g_hMappingList, LVM_INSERTCOLUMNW, 2, (LPARAM)&lvc);
 
-    // Populate list
     PopulateMappingsList(g_hMappingList);
 
-    // Buttons on the right
-    int btnX = rcTab.right - 80;
-    int btnY = rcTab.top;
-    int btnH = 28;
-    int btnW = 75;
+    HWND hBtn = CreateWindowExW(0, L"BUTTON", L"新增映射", WS_TABSTOP | BS_PUSHBUTTON | BS_OWNERDRAW | WS_CHILD | WS_VISIBLE,
+        btnX, btnY, btnW, btnH, hDlg, (HMENU)IDC_BTN_ADD, GetModuleHandle(NULL), NULL);
+    TrackTabControl(TAB_MAPPING, hBtn);
+    btnY += btnH + btnGap;
 
-    HWND hBtn = CreateWindowExA(0, "BUTTON", "Add", WS_TABSTOP | BS_PUSHBUTTON | WS_CHILD | WS_VISIBLE,
-        btnX, btnY, btnW, btnH, g_hTab, (HMENU)IDC_BTN_ADD, GetModuleHandle(NULL), NULL);
-    g_tabControls[TAB_MAPPING][g_tabControlCount[TAB_MAPPING]++] = hBtn;
-    btnY += btnH + 5;
+    hBtn = CreateWindowExW(0, L"BUTTON", L"编辑映射", WS_TABSTOP | BS_PUSHBUTTON | BS_OWNERDRAW | WS_CHILD | WS_VISIBLE,
+        btnX, btnY, btnW, btnH, hDlg, (HMENU)IDC_BTN_EDIT, GetModuleHandle(NULL), NULL);
+    TrackTabControl(TAB_MAPPING, hBtn);
+    btnY += btnH + btnGap;
 
-    hBtn = CreateWindowExA(0, "BUTTON", "Edit", WS_TABSTOP | BS_PUSHBUTTON | WS_CHILD | WS_VISIBLE,
-        btnX, btnY, btnW, btnH, g_hTab, (HMENU)IDC_BTN_EDIT, GetModuleHandle(NULL), NULL);
-    g_tabControls[TAB_MAPPING][g_tabControlCount[TAB_MAPPING]++] = hBtn;
-    btnY += btnH + 5;
+    hBtn = CreateWindowExW(0, L"BUTTON", L"删除映射", WS_TABSTOP | BS_PUSHBUTTON | BS_OWNERDRAW | WS_CHILD | WS_VISIBLE,
+        btnX, btnY, btnW, btnH, hDlg, (HMENU)IDC_BTN_REMOVE, GetModuleHandle(NULL), NULL);
+    TrackTabControl(TAB_MAPPING, hBtn);
+    btnY += btnH + btnGap + 8;
 
-    hBtn = CreateWindowExA(0, "BUTTON", "Remove", WS_TABSTOP | BS_PUSHBUTTON | WS_CHILD | WS_VISIBLE,
-        btnX, btnY, btnW, btnH, g_hTab, (HMENU)IDC_BTN_REMOVE, GetModuleHandle(NULL), NULL);
-    g_tabControls[TAB_MAPPING][g_tabControlCount[TAB_MAPPING]++] = hBtn;
-    btnY += btnH + 10;
+    hBtn = CreateWindowExW(0, L"BUTTON", L"恢复默认", WS_TABSTOP | BS_PUSHBUTTON | BS_OWNERDRAW | WS_CHILD | WS_VISIBLE,
+        btnX, btnY, btnW, btnH, hDlg, (HMENU)IDC_BTN_RESET, GetModuleHandle(NULL), NULL);
+    TrackTabControl(TAB_MAPPING, hBtn);
 
-    hBtn = CreateWindowExA(0, "BUTTON", "Reset", WS_TABSTOP | BS_PUSHBUTTON | WS_CHILD | WS_VISIBLE,
-        btnX, btnY, btnW, btnH, g_hTab, (HMENU)IDC_BTN_RESET, GetModuleHandle(NULL), NULL);
-    g_tabControls[TAB_MAPPING][g_tabControlCount[TAB_MAPPING]++] = hBtn;
-
-    // Ensure all content controls are on top of the tab control
     for (int i = 0; i < g_tabControlCount[TAB_MAPPING]; i++) {
         SetWindowPos(g_tabControls[TAB_MAPPING][i], HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
     }
 
     LOG_DEBUG("CreateTab2Controls: created %d controls", g_tabControlCount[TAB_MAPPING]);
-
-    // Just force repaint to ensure everything is visible
     InvalidateRect(hDlg, &rcTab, TRUE);
     UpdateWindow(hDlg);
 }
 
 static void PopulateMappingsList(HWND hList) {
-    // Clear existing items
     int count = ListView_GetItemCount(hList);
     for (int i = count - 1; i >= 0; i--) {
         ListView_DeleteItem(hList, i);
     }
 
-    // Add all current mappings
     int mappingCount;
     const KeyMapping* mappings = KeymapGetAll(&mappingCount);
 
-    // We need to get names - we'll use the existing table in config.c
-    // But since it's static there, we'll have to search by code
-    // For display, we can just use the name from the mapping which already has it
-
     for (int i = 0; i < mappingCount; i++) {
-        LVITEM lvi;
+        LVITEMW lvi;
+        char fromName[64];
+        char toName[64];
+        wchar_t fromText[64];
+        wchar_t toText[64];
+        wchar_t fromDisplayFallback[64];
+        wchar_t toDisplayFallback[64];
+        wchar_t desc[192];
+        const wchar_t* fromDisplay;
+        const wchar_t* toDisplay;
+
+        ExtractMappingNames(mappings[i].name, fromName, sizeof(fromName), toName, sizeof(toName));
+        Utf8ToWide(fromName, fromText, (int)ARRAYSIZE(fromText));
+        Utf8ToWide(toName, toText, (int)ARRAYSIZE(toText));
+        fromDisplay = KeyDisplayNameW(fromName, fromDisplayFallback, ARRAYSIZE(fromDisplayFallback));
+        toDisplay = KeyDisplayNameW(toName, toDisplayFallback, ARRAYSIZE(toDisplayFallback));
+        swprintf(desc, ARRAYSIZE(desc), L"CapsLock + %ls  发送  %ls", fromDisplay, toDisplay);
+
+        ZeroMemory(&lvi, sizeof(lvi));
         lvi.mask = LVIF_TEXT;
         lvi.iItem = i;
         lvi.iSubItem = 0;
-        // Get from name from scan code - we don't have it directly here, but we can extract from mapping name
-        // mapping name is like "A->LEFT" so we just take the first part
-        char fromName[64];
-        char* arrow = strstr(mappings[i].name, "->");
-        if (arrow) {
-            int len = arrow - mappings[i].name;
-            strncpy(fromName, mappings[i].name, len);
-            fromName[len] = '\0';
-        } else {
-            strncpy(fromName, mappings[i].name, sizeof(fromName));
-        }
-        lvi.pszText = fromName;
-        ListView_InsertItem(hList, &lvi);
+        lvi.pszText = fromText;
+        SendMessageW(hList, LVM_INSERTITEMW, 0, (LPARAM)&lvi);
 
-        // to name
+        ZeroMemory(&lvi, sizeof(lvi));
         lvi.iSubItem = 1;
-        char toName[64];
-        char* arrow2 = strstr(mappings[i].name, "->");
-        if (arrow2 && arrow2[2]) {
-            strncpy(toName, arrow2 + 2, sizeof(toName));
-        } else {
-            strncpy(toName, mappings[i].name, sizeof(toName));
-        }
-        lvi.pszText = toName;
-        ListView_SetItemText(hList, i, 1, lvi.pszText);
+        lvi.pszText = toText;
+        SendMessageW(hList, LVM_SETITEMTEXTW, (WPARAM)i, (LPARAM)&lvi);
 
-        // full name
         lvi.iSubItem = 2;
-        lvi.pszText = mappings[i].name;
-        ListView_SetItemText(hList, i, 2, lvi.pszText);
+        lvi.pszText = desc;
+        SendMessageW(hList, LVM_SETITEMTEXTW, (WPARAM)i, (LPARAM)&lvi);
     }
 }
 
@@ -415,22 +842,38 @@ static void ClearTabControls(int tabIndex) {
         DestroyWindow(g_tabControls[tabIndex][i]);
     }
     g_tabControlCount[tabIndex] = 0;
+
+    if (tabIndex == TAB_BASIC) {
+        g_hLogEdit = NULL;
+        g_hModelEdit = NULL;
+    } else if (tabIndex == TAB_MAPPING) {
+        g_hMappingList = NULL;
+    }
+}
+
+static void CapturePathEdits(void) {
+    if (g_hLogEdit != NULL && IsWindow(g_hLogEdit)) {
+        GetEditTextUtf8(g_hLogEdit, g_workingConfig.logDirPath, sizeof(g_workingConfig.logDirPath));
+    }
+    if (g_hModelEdit != NULL && IsWindow(g_hModelEdit)) {
+        GetEditTextUtf8(g_hModelEdit, g_workingConfig.modelDirPath, sizeof(g_workingConfig.modelDirPath));
+    }
 }
 
 static void OnBrowseDirectory(HWND hDlg, int editId) {
-    BROWSEINFOA bi;
+    BROWSEINFOW bi;
     ZeroMemory(&bi, sizeof(bi));
     bi.hwndOwner = hDlg;
-    bi.lpszTitle = (editId == IDC_LOG_PATH) ? "Select log directory:" : "Select model directory:";
+    bi.lpszTitle = (editId == IDC_LOG_PATH) ? L"选择日志目录" : L"选择模型目录";
     bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
 
-    PIDLIST_ABSOLUTE pidl = SHBrowseForFolderA(&bi);
+    PIDLIST_ABSOLUTE pidl = SHBrowseForFolderW(&bi);
     if (pidl) {
-        char path[MAX_PATH];
-        SHGetPathFromIDListA(pidl, path);
+        wchar_t path[MAX_PATH];
+        SHGetPathFromIDListW(pidl, path);
 
         HWND hEdit = GetDlgItem(hDlg, editId);
-        SetWindowTextA(hEdit, path);
+        SetWindowTextW(hEdit, path);
 
         CoTaskMemFree(pidl);
     }
@@ -446,7 +889,7 @@ static void OnAddMapping(HWND hDlg) {
 static void OnEditMapping(HWND hDlg) {
     int selected = ListView_GetSelectionMark(g_hMappingList);
     if (selected < 0) {
-        MessageBoxW(hDlg, L"Please select a mapping first", L"Info", MB_OK | MB_ICONINFORMATION);
+        MessageBoxW(hDlg, L"请先选择一条映射。", L"提示", MB_OK | MB_ICONINFORMATION);
         return;
     }
 
@@ -459,18 +902,18 @@ static void OnEditMapping(HWND hDlg) {
 static void OnRemoveMapping(HWND hDlg) {
     int selected = ListView_GetSelectionMark(g_hMappingList);
     if (selected < 0) {
-        MessageBoxW(hDlg, L"Please select a mapping first", L"Info", MB_OK | MB_ICONINFORMATION);
+        MessageBoxW(hDlg, L"请先选择一条映射。", L"提示", MB_OK | MB_ICONINFORMATION);
         return;
     }
 
-    if (MessageBoxW(hDlg, L"Are you sure you want to delete this mapping?", L"Confirm Delete", MB_YESNO | MB_ICONQUESTION) == IDYES) {
+    if (MessageBoxW(hDlg, L"确定要删除这条映射吗？", L"确认删除", MB_YESNO | MB_ICONQUESTION) == IDYES) {
         // We need to rebuild the entire mapping list from scratch because we don't have direct access
         // So for simplicity, we'll just get all current mappings and filter out the selected one
         int mappingCount;
         const KeyMapping* currentMappings = KeymapGetAll(&mappingCount);
 
         if (mappingCount <= 1) {
-            MessageBoxW(hDlg, L"At least one mapping must be kept, cannot delete", L"Warning", MB_OK | MB_ICONWARNING);
+            MessageBoxW(hDlg, L"至少需要保留一条映射，不能全部删除。", L"警告", MB_OK | MB_ICONWARNING);
             return;
         }
 
@@ -479,9 +922,7 @@ static void OnRemoveMapping(HWND hDlg) {
         for (int i = 0; i < mappingCount; i++) {
             if (i != selected) {
                 char name[128];
-                // We need to reconstruct the name - we don't have the original names here, but we can get it from the list item
-                // For simplicity, just reuse the existing name
-                strncpy(name, currentMappings[i].name, sizeof(name));
+                snprintf(name, sizeof(name), "%s", currentMappings[i].name);
                 KeymapAddMapping(currentMappings[i].scanCode, currentMappings[i].targetVk, strdup(name));
             }
         }
@@ -492,7 +933,7 @@ static void OnRemoveMapping(HWND hDlg) {
 }
 
 static void OnResetMappings(HWND hDlg) {
-    if (MessageBoxW(hDlg, L"Are you sure you want to reset all mappings to default?\n\nThis will lose all custom changes and cannot be undone.", L"Confirm Reset", MB_YESNO | MB_ICONQUESTION) == IDYES) {
+    if (MessageBoxW(hDlg, L"确定要恢复默认映射吗？\n\n这会丢失当前所有自定义修改。", L"确认恢复", MB_YESNO | MB_ICONQUESTION) == IDYES) {
         KeymapResetToDefaults();
         PopulateMappingsList(g_hMappingList);
         g_needRebuildMappings = true;
@@ -552,21 +993,28 @@ static UINT LocalNameToVkCode(const char* name) {
 static INT_PTR CALLBACK MappingDialogProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
         case WM_INITDIALOG: {
+            SetWindowTextW(hDlg, L"按键映射");
             if (strlen(g_mappingFromText) > 0) {
-                SetWindowTextA(GetDlgItem(hDlg, IDC_FROM_KEY), g_mappingFromText);
-                SetWindowTextA(GetDlgItem(hDlg, IDC_TO_KEY), g_mappingToText);
+                SetEditTextUtf8(GetDlgItem(hDlg, IDC_FROM_KEY), g_mappingFromText);
+                SetEditTextUtf8(GetDlgItem(hDlg, IDC_TO_KEY), g_mappingToText);
             }
             return (INT_PTR)TRUE;
         }
+        case WM_CTLCOLORDLG:
+        case WM_CTLCOLORSTATIC:
+        case WM_CTLCOLOREDIT:
+        case WM_CTLCOLORBTN:
+            return (INT_PTR)HandleCtlColor((HWND)lParam, (HDC)wParam, msg);
+        case WM_DRAWITEM:
+            DrawOwnerButton((const DRAWITEMSTRUCT*)lParam);
+            return (INT_PTR)TRUE;
         case WM_COMMAND:
             if (LOWORD(wParam) == IDOK) {
-                // Get input
-                GetWindowTextA(GetDlgItem(hDlg, IDC_FROM_KEY), g_mappingFromText, sizeof(g_mappingFromText));
-                GetWindowTextA(GetDlgItem(hDlg, IDC_TO_KEY), g_mappingToText, sizeof(g_mappingToText));
+                GetEditTextUtf8(GetDlgItem(hDlg, IDC_FROM_KEY), g_mappingFromText, sizeof(g_mappingFromText));
+                GetEditTextUtf8(GetDlgItem(hDlg, IDC_TO_KEY), g_mappingToText, sizeof(g_mappingToText));
 
-                // Validate
                 if (strlen(g_mappingFromText) == 0 || strlen(g_mappingToText) == 0) {
-                    MessageBoxW(hDlg, L"Please enter both key names", L"Input Error", MB_OK | MB_ICONWARNING);
+                    MessageBoxW(hDlg, L"请填写触发键和输出键。", L"输入错误", MB_OK | MB_ICONWARNING);
                     return (INT_PTR)TRUE;
                 }
 
@@ -591,14 +1039,9 @@ static bool AddOrEditMapping(HWND hParent, bool isEdit, int selectedIndex) {
     if (isEdit) {
         int mappingCount;
         const KeyMapping* mappings = KeymapGetAll(&mappingCount);
-        // We need to get the names - extract from the mapping name which is already "from->to"
-        char* arrow = strstr((char*)mappings[selectedIndex].name, "->");
-        if (arrow) {
-            int len = arrow - (char*)mappings[selectedIndex].name;
-            strncpy(g_mappingFromText, mappings[selectedIndex].name, len);
-            g_mappingFromText[len] = '\0';
-            strncpy(g_mappingToText, arrow + 2, sizeof(g_mappingToText));
-        }
+        ExtractMappingNames(mappings[selectedIndex].name,
+                            g_mappingFromText, sizeof(g_mappingFromText),
+                            g_mappingToText, sizeof(g_mappingToText));
     }
 
     // Show the dialog
@@ -613,7 +1056,7 @@ static bool AddOrEditMapping(HWND hParent, bool isEdit, int selectedIndex) {
     UINT targetVk = LocalNameToVkCode(g_mappingToText);
 
     if (scanCode == 0 || targetVk == 0) {
-        MessageBoxW(hParent, L"Invalid key name!\n\nUse valid key names such as: H, J, K, L, LEFT, RIGHT, HOME, END", L"Key Name Error", MB_OK | MB_ICONERROR);
+        MessageBoxW(hParent, L"按键名称无效。\n\n可用示例：H、J、K、L、LEFT、RIGHT、HOME、END、F1。", L"按键名称错误", MB_OK | MB_ICONERROR);
         return false;
     }
 
@@ -621,7 +1064,7 @@ static bool AddOrEditMapping(HWND hParent, bool isEdit, int selectedIndex) {
     if (!isEdit) {
         const KeyMapping* existing = KeymapFindByScanCode(scanCode);
         if (existing != NULL) {
-            MessageBoxW(hParent, L"This key already has a mapping, please choose another", L"Duplicate Mapping", MB_OK | MB_ICONWARNING);
+            MessageBoxW(hParent, L"这个触发键已经存在映射，请换一个键。", L"重复映射", MB_OK | MB_ICONWARNING);
             return false;
         }
     }
@@ -650,9 +1093,7 @@ static bool AddOrEditMapping(HWND hParent, bool isEdit, int selectedIndex) {
 }
 
 static void OnOK(HWND hDlg) {
-    // Read paths from edits
-    GetWindowTextA(g_hLogEdit, g_workingConfig.logDirPath, sizeof(g_workingConfig.logDirPath));
-    GetWindowTextA(g_hModelEdit, g_workingConfig.modelDirPath, sizeof(g_workingConfig.modelDirPath));
+    CapturePathEdits();
 
     // Update the config
     ConfigSet(&g_workingConfig);

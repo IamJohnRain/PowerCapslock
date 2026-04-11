@@ -40,4 +40,8 @@ scripts/build.bat
 scripts/install.bat
 scripts/uninstall.bat
 
-test/
+test/*
+!test/config_function_test.py
+!test/README_CONFIG_FUNCTION_TEST.md
+test/output/
+test/test_run_*/

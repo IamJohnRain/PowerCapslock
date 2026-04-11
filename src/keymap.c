@@ -36,9 +36,9 @@ static const KeyMapping defaultMappings[] = {
     {0x08, VK_F7,  "7->F7"},   // 7
     {0x09, VK_F8,  "8->F8"},   // 8
     {0x0A, VK_F9,  "9->F9"},   // 9
-    {0x0B, VK_F10, "0->F10"},  // 0
-    {0x0C, VK_F11, "->F11"},   // -
-    {0x0D, VK_F12, "=>F12"}    // =
+    {0x0B, VK_F10, "0->F10"},      // 0
+    {0x0C, VK_F11, "MINUS->F11"},  // -
+    {0x0D, VK_F12, "EQUAL->F12"}   // =
 };
 
 static const int defaultMappingCount = sizeof(defaultMappings) / sizeof(defaultMappings[0]);

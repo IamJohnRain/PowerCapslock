@@ -397,12 +397,16 @@ static HookAction ProcessKeyEvent(const KBDLLHOOKSTRUCT* pKb, WPARAM wParam) {
             GetModifierState(&shift, &ctrl, &alt);
             LOG_DEBUG("Mapping triggered: %s (scanCode=0x%02X -> VK=%d) [Shift=%d Ctrl=%d Alt=%d]",
                       mapping->name, scanCode, mapping->targetVk, shift, ctrl, alt);
-            SendKeyInput(mapping->targetVk, true);
+            if (!g_hook.testMode) {
+                SendKeyInput(mapping->targetVk, true);
+            }
             return HOOK_ACTION_INTERCEPT;
         }
 
         if (isKeyUp) {
-            SendKeyInput(mapping->targetVk, false);
+            if (!g_hook.testMode) {
+                SendKeyInput(mapping->targetVk, false);
+            }
             return HOOK_ACTION_INTERCEPT;
         }
     }
@@ -651,6 +655,118 @@ bool HookRunCapsLockATest(DWORD slowStartDelayMs, const char* outputPath) {
              report.asyncStopHandled ? 1 : 0);
 
     WriteCapsLockATestReport(outputPath, &report);
+    memset(&g_hook, 0, sizeof(g_hook));
+
+    return report.passed;
+}
+
+typedef struct {
+    DWORD runId;
+    WORD scanCode;
+    UINT expectedVk;
+    bool expectMissing;
+    bool mappingFound;
+    UINT actualVk;
+    HookAction capslockDownAction;
+    HookAction keyDownAction;
+    HookAction keyUpAction;
+    HookAction capslockUpAction;
+    bool passed;
+} HookKeyMappingTestReport;
+
+static void WriteKeyMappingTestReport(const char* outputPath, const HookKeyMappingTestReport* report) {
+    FILE* file = NULL;
+
+    if (outputPath == NULL || outputPath[0] == '\0' || report == NULL) {
+        return;
+    }
+
+    file = fopen(outputPath, "w");
+    if (file == NULL) {
+        LOG_ERROR("[keymap-test] Failed to open report file: %s", outputPath);
+        return;
+    }
+
+    fprintf(file, "{\n");
+    fprintf(file, "  \"run_id\": %lu,\n", report->runId);
+    fprintf(file, "  \"scan_code\": %u,\n", (unsigned int)report->scanCode);
+    fprintf(file, "  \"expected_vk\": %u,\n", report->expectedVk);
+    fprintf(file, "  \"expect_missing\": %s,\n", report->expectMissing ? "true" : "false");
+    fprintf(file, "  \"mapping_found\": %s,\n", report->mappingFound ? "true" : "false");
+    fprintf(file, "  \"actual_vk\": %u,\n", report->actualVk);
+    fprintf(file, "  \"capslock_down_action\": \"%s\",\n", HookActionToString(report->capslockDownAction));
+    fprintf(file, "  \"key_down_action\": \"%s\",\n", HookActionToString(report->keyDownAction));
+    fprintf(file, "  \"key_up_action\": \"%s\",\n", HookActionToString(report->keyUpAction));
+    fprintf(file, "  \"capslock_up_action\": \"%s\",\n", HookActionToString(report->capslockUpAction));
+    fprintf(file, "  \"passed\": %s\n", report->passed ? "true" : "false");
+    fprintf(file, "}\n");
+    fclose(file);
+}
+
+bool HookRunKeyMappingTest(WORD scanCode, UINT expectedVk, const char* outputPath) {
+    HookKeyMappingTestReport report = {0};
+    KBDLLHOOKSTRUCT event = {0};
+    const KeyMapping* mapping = NULL;
+
+    memset(&g_hook, 0, sizeof(g_hook));
+    EnsureThreadMessageQueue();
+
+    g_hook.enabled = true;
+    g_hook.ownerThreadId = GetCurrentThreadId();
+    g_hook.testMode = true;
+    g_hook.testRunId = GetTickCount();
+
+    report.runId = g_hook.testRunId;
+    report.scanCode = scanCode;
+    report.expectedVk = expectedVk;
+    report.expectMissing = (expectedVk == 0);
+
+    mapping = KeymapFindByScanCode(scanCode);
+    report.mappingFound = (mapping != NULL);
+    report.actualVk = mapping != NULL ? mapping->targetVk : 0;
+
+    LOG_INFO("[keymap-test] BEGIN run_id=%lu scan_code=0x%02X expected_vk=%u",
+             report.runId, scanCode, expectedVk);
+
+    event.vkCode = VK_CAPITAL;
+    event.scanCode = 0x3A;
+    event.flags = 0;
+    report.capslockDownAction = ProcessKeyEvent(&event, WM_KEYDOWN);
+
+    event.vkCode = 0;
+    event.scanCode = scanCode;
+    event.flags = 0;
+    report.keyDownAction = ProcessKeyEvent(&event, WM_KEYDOWN);
+    report.keyUpAction = ProcessKeyEvent(&event, WM_KEYUP);
+
+    event.vkCode = VK_CAPITAL;
+    event.scanCode = 0x3A;
+    report.capslockUpAction = ProcessKeyEvent(&event, WM_KEYUP);
+
+    if (report.expectMissing) {
+        report.passed =
+            !report.mappingFound &&
+            report.capslockDownAction == HOOK_ACTION_INTERCEPT &&
+            report.keyDownAction == HOOK_ACTION_PASS_THROUGH &&
+            report.keyUpAction == HOOK_ACTION_PASS_THROUGH &&
+            report.capslockUpAction == HOOK_ACTION_INTERCEPT;
+    } else {
+        report.passed =
+            report.mappingFound &&
+            report.actualVk == report.expectedVk &&
+            report.capslockDownAction == HOOK_ACTION_INTERCEPT &&
+            report.keyDownAction == HOOK_ACTION_INTERCEPT &&
+            report.keyUpAction == HOOK_ACTION_INTERCEPT &&
+            report.capslockUpAction == HOOK_ACTION_INTERCEPT;
+    }
+
+    LOG_INFO("[keymap-test] END run_id=%lu passed=%d mapping_found=%d actual_vk=%u",
+             report.runId,
+             report.passed ? 1 : 0,
+             report.mappingFound ? 1 : 0,
+             report.actualVk);
+
+    WriteKeyMappingTestReport(outputPath, &report);
     memset(&g_hook, 0, sizeof(g_hook));
 
     return report.passed;

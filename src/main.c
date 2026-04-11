@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 // minimp3 MP3 decoder
 #define MINIMP3_IMPLEMENTATION
@@ -20,6 +21,9 @@
 // 全局变量
 static HINSTANCE g_hInstance = NULL;
 static HHOOK g_hHook = NULL;
+static char* g_testMappingFrom = NULL;
+static char* g_testMappingTo = NULL;
+static char* g_testMappingOutputPath = NULL;
 
 // 命令行覆盖配置
 static int g_cmdEnableVoice = -1;  // -1: no change, 0: disable, 1: enable
@@ -48,7 +52,10 @@ static BOOL InitializeModules(void) {
     ConfigLoad(NULL);
 
     // 根据配置更新日志级别
+    LoggerCleanup();
+    LoggerInit(config->logToFile ? ConfigGetLogPath() : NULL);
     LoggerSetLevel(config->logLevel);
+    LoggerCleanupOldLogs(3);
 
     // 初始化键盘布局模块
     KeyboardLayoutInit();
@@ -505,6 +512,7 @@ static int RunConfigDialogTest(void) {
 // 向前声明
 static int RunAudioFileTest(void);
 static int RunCapsLockAHookTest(const char* outputPath);
+static int RunKeyMappingTestMode(void);
 
 // 命令行模式枚举
 typedef enum {
@@ -514,7 +522,8 @@ typedef enum {
     CMD_MODE_TEST_CONFIG = 3,
     CMD_MODE_TEST_CONFIG_DIALOG = 4,
     CMD_MODE_TEST_AUDIO_FILE = 5,
-    CMD_MODE_TEST_CAPSLOCK_A = 6
+    CMD_MODE_TEST_CAPSLOCK_A = 6,
+    CMD_MODE_TEST_KEY_MAPPING = 7
 } CommandMode;
 
 // 保存音频文件测试参数
@@ -880,6 +889,65 @@ static int RunCapsLockAHookTest(const char* outputPath) {
     }
 }
 
+static int RunKeyMappingTestMode(void) {
+    WORD scanCode = 0;
+    UINT expectedVk = 0;
+    bool passed = false;
+
+    if (g_testMappingFrom == NULL || g_testMappingTo == NULL) {
+        printf("ERROR: --test-key-mapping requires <from-key> <to-key|NONE> [output-json]\n");
+        fflush(stdout);
+        return 1;
+    }
+
+    g_hInstance = GetModuleHandle(NULL);
+
+    ConfigInit();
+    LoggerInit(ConfigGetLogPath());
+    LoggerSetLevel(LOG_LEVEL_DEBUG);
+    KeymapInit();
+    ConfigLoad(NULL);
+    LoggerSetLevel(LOG_LEVEL_DEBUG);
+
+    scanCode = ConfigKeyNameToScanCode(g_testMappingFrom);
+    if (scanCode == 0) {
+        printf("ERROR: invalid source key for --test-key-mapping: %s\n", g_testMappingFrom);
+        fflush(stdout);
+        LoggerCleanup();
+        KeymapCleanup();
+        ConfigCleanup();
+        return 1;
+    }
+
+    if (_stricmp(g_testMappingTo, "NONE") != 0 && strcmp(g_testMappingTo, "-") != 0) {
+        expectedVk = ConfigKeyNameToVkCode(g_testMappingTo);
+        if (expectedVk == 0) {
+            printf("ERROR: invalid target key for --test-key-mapping: %s\n", g_testMappingTo);
+            fflush(stdout);
+            LoggerCleanup();
+            KeymapCleanup();
+            ConfigCleanup();
+            return 1;
+        }
+    }
+
+    printf("========== PowerCapslock Key Mapping Test ==========\n");
+    printf("From: %s (scanCode=0x%02X)\n", g_testMappingFrom, scanCode);
+    printf("Expected target: %s (vk=%u)\n", g_testMappingTo, expectedVk);
+    printf("Report: %s\n", g_testMappingOutputPath != NULL ? g_testMappingOutputPath : "<none>");
+    fflush(stdout);
+
+    passed = HookRunKeyMappingTest(scanCode, expectedVk, g_testMappingOutputPath);
+
+    LoggerCleanup();
+    KeymapCleanup();
+    ConfigCleanup();
+
+    printf("Key mapping test %s\n", passed ? "PASSED" : "FAILED");
+    fflush(stdout);
+    return passed ? 0 : 1;
+}
+
 static CommandMode ParseCommandLine(LPSTR lpCmdLine, char** outputPath) {
     char* args = lpCmdLine;
     CommandMode mode = CMD_MODE_NORMAL;
@@ -962,6 +1030,35 @@ static CommandMode ParseCommandLine(LPSTR lpCmdLine, char** outputPath) {
                 *outputPath = NULL;
                 break;
             }
+        }
+        else if (strncmp(args, "--test-key-mapping", strlen("--test-key-mapping")) == 0 &&
+                (args[strlen("--test-key-mapping")] == ' ' || args[strlen("--test-key-mapping")] == '\0')) {
+            mode = CMD_MODE_TEST_KEY_MAPPING;
+            args += strlen("--test-key-mapping");
+            while (*args == ' ' || *args == '\t') args++;
+
+            if (*args != '\0') {
+                g_testMappingFrom = args;
+                while (*args != ' ' && *args != '\t' && *args != '\0') args++;
+                if (*args != '\0') {
+                    *args = '\0';
+                    args++;
+                    while (*args == ' ' || *args == '\t') args++;
+                    if (*args != '\0') {
+                        g_testMappingTo = args;
+                        while (*args != ' ' && *args != '\t' && *args != '\0') args++;
+                        if (*args != '\0') {
+                            *args = '\0';
+                            args++;
+                            while (*args == ' ' || *args == '\t') args++;
+                            if (*args != '\0') {
+                                g_testMappingOutputPath = args;
+                            }
+                        }
+                    }
+                }
+            }
+            break;
         }
         else if (strncmp(args, "--cleanup-logs", strlen("--cleanup-logs")) == 0 &&
                 (args[strlen("--cleanup-logs")] == ' ' || args[strlen("--cleanup-logs")] == '\0')) {
@@ -1048,6 +1145,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             ReleaseMutex(hMutex);
             CloseHandle(hMutex);
             return RunCapsLockAHookTest(outputPath);
+        case CMD_MODE_TEST_KEY_MAPPING:
+            ReleaseMutex(hMutex);
+            CloseHandle(hMutex);
+            return RunKeyMappingTestMode();
         case CMD_MODE_NORMAL:
         default:
             break;

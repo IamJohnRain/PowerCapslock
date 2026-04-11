@@ -677,3 +677,17 @@ const char* ConfigGetPath(void) {
 const char* ConfigGetLogPath(void) {
     return g_config.logPath;
 }
+
+WORD ConfigKeyNameToScanCode(const char* name) {
+    if (name == NULL) {
+        return 0;
+    }
+    return NameToScanCode(name);
+}
+
+UINT ConfigKeyNameToVkCode(const char* name) {
+    if (name == NULL) {
+        return 0;
+    }
+    return NameToVkCode(name);
+}

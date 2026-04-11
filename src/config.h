@@ -62,4 +62,7 @@ const char* ConfigGetPath(void);
 // 获取日志文件路径
 const char* ConfigGetLogPath(void);
 
+WORD ConfigKeyNameToScanCode(const char* name);
+UINT ConfigKeyNameToVkCode(const char* name);
+
 #endif // CONFIG_H
