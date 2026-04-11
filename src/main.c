@@ -509,10 +509,43 @@ static int RunConfigDialogTest(void) {
     return 0;
 }
 
+static int RunVoicePromptWindowTest(void) {
+    MSG msg;
+    DWORD endTick;
+
+    g_hInstance = GetModuleHandle(NULL);
+    ConfigInit();
+    LoggerInit(ConfigGetLogPath());
+    LoggerSetLevel(LOG_LEVEL_DEBUG);
+
+    if (!VoicePromptInit()) {
+        LoggerCleanup();
+        ConfigCleanup();
+        return 1;
+    }
+
+    VoicePromptShow();
+    endTick = GetTickCount() + 3000;
+    while (GetTickCount() < endTick) {
+        while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE)) {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+        Sleep(16);
+    }
+
+    VoicePromptHide();
+    VoicePromptCleanup();
+    LoggerCleanup();
+    ConfigCleanup();
+    return 0;
+}
+
 // 向前声明
 static int RunAudioFileTest(void);
 static int RunCapsLockAHookTest(const char* outputPath);
 static int RunKeyMappingTestMode(void);
+static int RunVoicePromptWindowTest(void);
 
 // 命令行模式枚举
 typedef enum {
@@ -523,7 +556,8 @@ typedef enum {
     CMD_MODE_TEST_CONFIG_DIALOG = 4,
     CMD_MODE_TEST_AUDIO_FILE = 5,
     CMD_MODE_TEST_CAPSLOCK_A = 6,
-    CMD_MODE_TEST_KEY_MAPPING = 7
+    CMD_MODE_TEST_KEY_MAPPING = 7,
+    CMD_MODE_TEST_VOICE_PROMPT = 8
 } CommandMode;
 
 // 保存音频文件测试参数
@@ -1075,6 +1109,11 @@ static CommandMode ParseCommandLine(LPSTR lpCmdLine, char** outputPath) {
             mode = CMD_MODE_TEST_CONFIG_DIALOG;
             args += strlen("--test-config-dialog");
         }
+        else if (strncmp(args, "--test-voice-prompt", strlen("--test-voice-prompt")) == 0 &&
+                (args[strlen("--test-voice-prompt")] == ' ' || args[strlen("--test-voice-prompt")] == '\0')) {
+            mode = CMD_MODE_TEST_VOICE_PROMPT;
+            args += strlen("--test-voice-prompt");
+        }
         else if (strncmp(args, "--disable-voice", strlen("--disable-voice")) == 0 &&
                 (args[strlen("--disable-voice")] == ' ' || args[strlen("--disable-voice")] == '\0')) {
             g_cmdEnableVoice = 0;
@@ -1137,6 +1176,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         case CMD_MODE_TEST_CONFIG_DIALOG:
             // 保持单实例限制，不释放互斥量
             return RunConfigDialogTest();
+        case CMD_MODE_TEST_VOICE_PROMPT:
+            ReleaseMutex(hMutex);
+            CloseHandle(hMutex);
+            return RunVoicePromptWindowTest();
         case CMD_MODE_TEST_AUDIO_FILE:
             ReleaseMutex(hMutex);
             CloseHandle(hMutex);

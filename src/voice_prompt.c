@@ -2,43 +2,147 @@
 #include "logger.h"
 #include <windows.h>
 
-// 窗口类名
 static const char* WINDOW_CLASS = "PowerCapslockVoicePromptClass";
 
-// 全局状态
 static HWND g_hwnd = NULL;
 static bool g_initialized = false;
+static HFONT g_titleFont = NULL;
+static HFONT g_bodyFont = NULL;
+static HFONT g_hintFont = NULL;
 
-// 窗口过程
+static HFONT CreatePromptFont(int pointSize, int weight) {
+    HDC hdc = GetDC(NULL);
+    int height = -MulDiv(pointSize, GetDeviceCaps(hdc, LOGPIXELSY), 72);
+    ReleaseDC(NULL, hdc);
+    return CreateFontW(
+        height,
+        0,
+        0,
+        0,
+        weight,
+        FALSE,
+        FALSE,
+        FALSE,
+        DEFAULT_CHARSET,
+        OUT_DEFAULT_PRECIS,
+        CLIP_DEFAULT_PRECIS,
+        CLEARTYPE_QUALITY,
+        DEFAULT_PITCH | FF_SWISS,
+        L"Microsoft YaHei UI");
+}
+
+static COLORREF BlendColor(COLORREF a, COLORREF b, int percentB) {
+    int percentA = 100 - percentB;
+    return RGB(
+        (GetRValue(a) * percentA + GetRValue(b) * percentB) / 100,
+        (GetGValue(a) * percentA + GetGValue(b) * percentB) / 100,
+        (GetBValue(a) * percentA + GetBValue(b) * percentB) / 100);
+}
+
+static void FillGradient(HDC hdc, const RECT* rect, COLORREF topColor, COLORREF bottomColor) {
+    int height = rect->bottom - rect->top;
+    if (height <= 0) {
+        return;
+    }
+
+    for (int y = 0; y < height; y++) {
+        COLORREF color = BlendColor(topColor, bottomColor, (y * 100) / height);
+        HPEN pen = CreatePen(PS_SOLID, 1, color);
+        HGDIOBJ oldPen = SelectObject(hdc, pen);
+        MoveToEx(hdc, rect->left, rect->top + y, NULL);
+        LineTo(hdc, rect->right, rect->top + y);
+        SelectObject(hdc, oldPen);
+        DeleteObject(pen);
+    }
+}
+
+static void DrawRoundedGradient(HDC hdc, const RECT* rect, COLORREF topColor, COLORREF bottomColor, COLORREF borderColor, int radius) {
+    HRGN clip = CreateRoundRectRgn(rect->left, rect->top, rect->right + 1, rect->bottom + 1, radius, radius);
+    int saved = SaveDC(hdc);
+    SelectClipRgn(hdc, clip);
+    FillGradient(hdc, rect, topColor, bottomColor);
+    RestoreDC(hdc, saved);
+    DeleteObject(clip);
+
+    HPEN pen = CreatePen(PS_SOLID, 1, borderColor);
+    HGDIOBJ oldPen = SelectObject(hdc, pen);
+    HGDIOBJ oldBrush = SelectObject(hdc, GetStockObject(HOLLOW_BRUSH));
+    RoundRect(hdc, rect->left, rect->top, rect->right, rect->bottom, radius, radius);
+    SelectObject(hdc, oldBrush);
+    SelectObject(hdc, oldPen);
+    DeleteObject(pen);
+}
+
+static void DrawMicrophoneGlyph(HDC hdc, int centerX, int centerY) {
+    HPEN glowPen = CreatePen(PS_SOLID, 4, RGB(94, 218, 255));
+    HGDIOBJ oldPen = SelectObject(hdc, glowPen);
+    HGDIOBJ oldBrush = SelectObject(hdc, GetStockObject(HOLLOW_BRUSH));
+
+    RoundRect(hdc, centerX - 10, centerY - 20, centerX + 10, centerY + 8, 10, 10);
+    Arc(hdc, centerX - 21, centerY - 9, centerX + 21, centerY + 25, centerX - 20, centerY + 4, centerX + 20, centerY + 4);
+    MoveToEx(hdc, centerX, centerY + 22, NULL);
+    LineTo(hdc, centerX, centerY + 34);
+    MoveToEx(hdc, centerX - 14, centerY + 34, NULL);
+    LineTo(hdc, centerX + 14, centerY + 34);
+
+    SelectObject(hdc, oldBrush);
+    SelectObject(hdc, oldPen);
+    DeleteObject(glowPen);
+}
+
+static void DrawPrompt(HDC hdc, const RECT* rect) {
+    RECT panel = *rect;
+    RECT badge = {panel.left + 24, panel.top + 28, panel.left + 92, panel.top + 96};
+    RECT title = {panel.left + 112, panel.top + 26, panel.right - 28, panel.top + 58};
+    RECT body = {panel.left + 112, panel.top + 62, panel.right - 28, panel.top + 88};
+    RECT hint = {panel.left + 112, panel.top + 96, panel.right - 28, panel.top + 120};
+
+    DrawRoundedGradient(hdc, &panel, RGB(20, 43, 66), RGB(42, 81, 108), RGB(140, 208, 255), 24);
+
+    HBRUSH badgeBrush = CreateSolidBrush(RGB(22, 73, 98));
+    HPEN badgePen = CreatePen(PS_SOLID, 1, RGB(125, 223, 255));
+    HGDIOBJ oldBrush = SelectObject(hdc, badgeBrush);
+    HGDIOBJ oldPen = SelectObject(hdc, badgePen);
+    RoundRect(hdc, badge.left, badge.top, badge.right, badge.bottom, 34, 34);
+    SelectObject(hdc, oldPen);
+    SelectObject(hdc, oldBrush);
+    DeleteObject(badgePen);
+    DeleteObject(badgeBrush);
+
+    DrawMicrophoneGlyph(hdc, badge.left + 34, badge.top + 30);
+
+    SetBkMode(hdc, TRANSPARENT);
+
+    HGDIOBJ oldFont = SelectObject(hdc, g_titleFont);
+    SetTextColor(hdc, RGB(248, 253, 255));
+    DrawTextW(hdc, L"正在听你说话", -1, &title, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+    SelectObject(hdc, g_bodyFont);
+    SetTextColor(hdc, RGB(214, 238, 255));
+    DrawTextW(hdc, L"说完后松开 CapsLock + A，文字会自动输入。", -1, &body, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+    SelectObject(hdc, g_hintFont);
+    SetTextColor(hdc, RGB(157, 210, 236));
+    DrawTextW(hdc, L"离线识别中，请保持麦克风清晰。", -1, &hint, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+    if (oldFont != NULL) {
+        SelectObject(hdc, oldFont);
+    }
+}
+
 static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
         case WM_PAINT: {
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hwnd, &ps);
-
-            // 获取窗口大小
             RECT rect;
             GetClientRect(hwnd, &rect);
-
-            // 设置背景色（与 Toast 一致）
-            HBRUSH hBrush = CreateSolidBrush(RGB(50, 50, 50));
-            FillRect(hdc, &rect, hBrush);
-            DeleteObject(hBrush);
-
-            // 设置文本颜色
-            SetTextColor(hdc, RGB(255, 255, 255));
-            SetBkMode(hdc, TRANSPARENT);
-
-            // 绘制文本（居中）
-            const wchar_t* text = L"正在语音输入，请说话...";
-            DrawTextW(hdc, text, -1, &rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-
+            DrawPrompt(hdc, &rect);
             EndPaint(hwnd, &ps);
             return 0;
         }
 
         case WM_ERASEBKGND:
-            // 返回非零表示已处理背景擦除
             return 1;
 
         case WM_DESTROY:
@@ -56,14 +160,13 @@ bool VoicePromptInit(void) {
         return true;
     }
 
-    // 注册窗口类
     WNDCLASSEXA wc = {0};
     wc.cbSize = sizeof(WNDCLASSEXA);
     wc.style = CS_HREDRAW | CS_VREDRAW;
     wc.lpfnWndProc = WindowProc;
     wc.hInstance = GetModuleHandle(NULL);
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-    wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
+    wc.hbrBackground = NULL;
     wc.lpszClassName = WINDOW_CLASS;
 
     if (!RegisterClassExA(&wc)) {
@@ -74,6 +177,10 @@ bool VoicePromptInit(void) {
         }
     }
 
+    g_titleFont = CreatePromptFont(18, FW_SEMIBOLD);
+    g_bodyFont = CreatePromptFont(11, FW_NORMAL);
+    g_hintFont = CreatePromptFont(10, FW_NORMAL);
+
     g_initialized = true;
     LOG_INFO("[语音提示] 模块初始化成功");
     return true;
@@ -83,6 +190,19 @@ void VoicePromptCleanup(void) {
     if (g_hwnd != NULL) {
         DestroyWindow(g_hwnd);
         g_hwnd = NULL;
+    }
+
+    if (g_titleFont != NULL) {
+        DeleteObject(g_titleFont);
+        g_titleFont = NULL;
+    }
+    if (g_bodyFont != NULL) {
+        DeleteObject(g_bodyFont);
+        g_bodyFont = NULL;
+    }
+    if (g_hintFont != NULL) {
+        DeleteObject(g_hintFont);
+        g_hintFont = NULL;
     }
 
     g_initialized = false;
@@ -97,56 +217,65 @@ void VoicePromptShow(void) {
 
     if (g_hwnd != NULL && IsWindowVisible(g_hwnd)) {
         LOG_DEBUG("[语音提示] 窗口已显示，跳过");
-        return;  // 已显示
+        return;
     }
 
-    // 窗口大小（与 Toast 一致）
-    int width = 350;
-    int height = 80;
+    int width = 520;
+    int height = 132;
+    int x = 0;
+    int y = 0;
 
-    int x, y;
+    POINT cursor;
+    if (!GetCursorPos(&cursor)) {
+        cursor.x = 0;
+        cursor.y = 0;
+    }
 
-    // 获取屏幕工作区域
-    RECT workArea;
-    if (SystemParametersInfoW(SPI_GETWORKAREA, 0, &workArea, 0)) {
-        // 计算位置（屏幕底部居中，与 Toast 一致）
-        x = (workArea.right - workArea.left - width) / 2;
-        y = workArea.bottom - 100;  // 距离底部 100 像素
+    HMONITOR monitor = MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi;
+    ZeroMemory(&mi, sizeof(mi));
+    mi.cbSize = sizeof(mi);
+    if (monitor != NULL && GetMonitorInfoW(monitor, &mi)) {
+        RECT workArea = mi.rcWork;
+        x = workArea.left + (workArea.right - workArea.left - width) / 2;
+        y = workArea.bottom - height - 64;
     } else {
-        // 备用：屏幕中央
         int screenWidth = GetSystemMetrics(SM_CXSCREEN);
         int screenHeight = GetSystemMetrics(SM_CYSCREEN);
         x = (screenWidth - width) / 2;
-        y = (screenHeight - height) / 2;
+        y = screenHeight - height - 96;
     }
 
     LOG_INFO("[语音提示] 创建窗口位置: (%d, %d), 大小: %dx%d", x, y, width, height);
 
-    // 创建窗口（样式与 Toast 一致）
     g_hwnd = CreateWindowExA(
         WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED,
         WINDOW_CLASS,
         "VoicePrompt",
-        WS_POPUP | WS_BORDER,
-        x, y, width, height,
-        NULL, NULL,
+        WS_POPUP,
+        x,
+        y,
+        width,
+        height,
+        NULL,
+        NULL,
         GetModuleHandle(NULL),
-        NULL
-    );
+        NULL);
 
     if (g_hwnd == NULL) {
         LOG_ERROR("[语音提示] 创建窗口失败: %d", GetLastError());
         return;
     }
 
-    LOG_INFO("[语音提示] 窗口句柄: %p", g_hwnd);
+    HRGN region = CreateRoundRectRgn(0, 0, width + 1, height + 1, 26, 26);
+    if (region != NULL && !SetWindowRgn(g_hwnd, region, TRUE)) {
+        DeleteObject(region);
+    }
 
-    // 设置窗口透明效果（与 Toast 一致）
-    if (!SetLayeredWindowAttributes(g_hwnd, 0, 230, LWA_ALPHA)) {
+    if (!SetLayeredWindowAttributes(g_hwnd, 0, 238, LWA_ALPHA)) {
         LOG_WARN("[语音提示] 设置透明度失败: %d", GetLastError());
     }
 
-    // 显示窗口
     ShowWindow(g_hwnd, SW_SHOWNA);
     UpdateWindow(g_hwnd);
 
