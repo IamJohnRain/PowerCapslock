@@ -263,8 +263,8 @@ static void HandleVoiceStartAsync(void) {
         LOG_WARN("[语音输入] 模型未加载，无法进行语音识别");
         MessageBoxW(NULL,
             L"语音识别模型未加载。\n\n"
-            L"请将模型文件放入 models 目录后重启程序。\n"
-            L"下载地址: https://github.com/k2-fsa/sherpa-onnx/releases",
+            L"请在配置页面选择 SenseVoice 模型目录。\n"
+            L"保存后程序会立即检测并加载模型。",
             L"PowerCapslock - 语音输入",
             MB_OK | MB_ICONINFORMATION);
         ResetVoiceSessionState();

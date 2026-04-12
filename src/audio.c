@@ -29,6 +29,8 @@ static IMMDevice* g_device = NULL;
 static IAudioClient* g_audioClient = NULL;
 static IAudioCaptureClient* g_captureClient = NULL;
 static HANDLE g_event = NULL;
+static bool g_audioInitialized = false;
+static bool g_comInitialized = false;
 
 // 录音缓冲区
 static float* g_recordBuffer = NULL;
@@ -66,12 +68,17 @@ static bool ExpandBuffer(int requiredSize) {
 bool AudioInit(void) {
     HRESULT hr;
 
+    if (g_audioInitialized) {
+        return true;
+    }
+
     // 初始化 COM
     hr = CoInitialize(NULL);
     if (FAILED(hr)) {
         LOG_ERROR("[音频] COM 初始化失败: 0x%08X", hr);
         return false;
     }
+    g_comInitialized = true;
 
     // 创建设备枚举器
     hr = CoCreateInstance(
@@ -84,7 +91,10 @@ bool AudioInit(void) {
 
     if (FAILED(hr)) {
         LOG_ERROR("[音频] 创建设备枚举器失败: 0x%08X", hr);
-        CoUninitialize();
+        if (g_comInitialized) {
+            CoUninitialize();
+            g_comInitialized = false;
+        }
         return false;
     }
 
@@ -100,7 +110,10 @@ bool AudioInit(void) {
         LOG_ERROR("[音频] 获取默认音频输入设备失败: 0x%08X", hr);
         g_enumerator->lpVtbl->Release(g_enumerator);
         g_enumerator = NULL;
-        CoUninitialize();
+        if (g_comInitialized) {
+            CoUninitialize();
+            g_comInitialized = false;
+        }
         return false;
     }
 
@@ -112,12 +125,20 @@ bool AudioInit(void) {
         g_device = NULL;
         g_enumerator->lpVtbl->Release(g_enumerator);
         g_enumerator = NULL;
-        CoUninitialize();
+        if (g_comInitialized) {
+            CoUninitialize();
+            g_comInitialized = false;
+        }
         return false;
     }
 
+    g_audioInitialized = true;
     LOG_INFO("[音频] 模块初始化成功");
     return true;
+}
+
+bool AudioIsInitialized(void) {
+    return g_audioInitialized;
 }
 
 void AudioCleanup(void) {
@@ -158,7 +179,11 @@ void AudioCleanup(void) {
     g_bufferSize = 0;
     g_bufferCapacity = 0;
 
-    CoUninitialize();
+    if (g_comInitialized) {
+        CoUninitialize();
+        g_comInitialized = false;
+    }
+    g_audioInitialized = false;
     LOG_DEBUG("[音频] 资源已清理");
 }
 

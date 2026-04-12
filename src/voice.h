@@ -2,6 +2,15 @@
 #define VOICE_H
 
 #include <stdbool.h>
+#include <windows.h>
+
+typedef struct {
+    char resolvedRoot[MAX_PATH];
+    char modelPath[MAX_PATH];
+    char tokensPath[MAX_PATH];
+    char modelName[64];
+    wchar_t reason[512];
+} VoiceModelCheckResult;
 
 /**
  * 初始化语音识别模块
@@ -9,6 +18,9 @@
  * @return true 成功，false 失败（模型未找到）
  */
 bool VoiceInit(const char* modelDir);
+
+bool VoiceCheckModelDirectory(const char* modelDir, VoiceModelCheckResult* result);
+bool VoiceReloadModel(const char* modelDir, VoiceModelCheckResult* result);
 
 /**
  * 清理语音识别资源

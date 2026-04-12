@@ -4,6 +4,9 @@ extern "C" {
 #include "config.h"
 #include "keymap.h"
 #include "logger.h"
+#include "audio.h"
+#include "voice.h"
+#include "voice_prompt.h"
 }
 
 #include <windows.h>
@@ -312,6 +315,7 @@ struct ConfigWebViewWindow {
     std::wstring testAction;
     std::wstring testBrowseLogPath;
     std::wstring testBrowseModelPath;
+    bool testSkipModelLoad = false;
     bool saved = false;
     bool mappingsChanged = false;
     bool testAutomationStarted = false;
@@ -511,6 +515,33 @@ private:
         }
 
         Config updated = *ConfigGet();
+        std::string modelPathUtf8 = WideToUtf8(modelPath);
+        bool modelPathChanged = modelPathUtf8 != updated.modelDirPath;
+        bool modelLoadedNow = false;
+        VoiceModelCheckResult modelStatus;
+        ZeroMemory(&modelStatus, sizeof(modelStatus));
+
+        if (modelPathChanged && !owner->testSkipModelLoad) {
+            HCURSOR oldCursor = SetCursor(LoadCursor(NULL, IDC_WAIT));
+            if (!VoiceReloadModel(modelPathUtf8.c_str(), &modelStatus)) {
+                if (oldCursor != NULL) {
+                    SetCursor(oldCursor);
+                }
+                const wchar_t* reason = modelStatus.reason[0] != L'\0'
+                    ? modelStatus.reason
+                    : L"模型不可用，请确认目录中包含 model.onnx 和 tokens.txt。";
+                MessageBoxW(owner->hwnd, reason, L"PowerCapslock - 模型不可用", MB_OK | MB_ICONWARNING);
+                owner->PostError(reason);
+                return;
+            }
+            if (oldCursor != NULL) {
+                SetCursor(oldCursor);
+            }
+            modelLoadedNow = true;
+            updated.voiceInputEnabled = true;
+            updated.voiceInputAsked = true;
+        }
+
         CopyPathToConfig(logPath, updated.logDirPath, sizeof(updated.logDirPath));
         CopyPathToConfig(modelPath, updated.modelDirPath, sizeof(updated.modelDirPath));
         ConfigSet(&updated);
@@ -527,6 +558,25 @@ private:
 
         owner->saved = true;
         owner->mappingsChanged = MappingSignature(mappings) != owner->initialMappingSignature;
+
+        if (modelLoadedNow) {
+            bool audioReady = AudioInit();
+            bool promptReady = VoicePromptInit();
+            std::wstring modelName = Utf8ToWide(modelStatus.modelName[0] != '\0' ? modelStatus.modelName : "SenseVoice-Small");
+            std::wstring message = modelName + L" 模型加载成功。\n\n无需重启程序，语音输入现在可以使用。";
+            if (!audioReady || !promptReady) {
+                message = modelName + L" 模型加载成功。\n\n"
+                          L"但语音输入运行环境没有完全准备好：";
+                if (!audioReady) {
+                    message += L"\n- 音频录制模块初始化失败，请检查麦克风权限或默认输入设备。";
+                }
+                if (!promptReady) {
+                    message += L"\n- 语音提示窗口初始化失败。";
+                }
+            }
+            MessageBoxW(owner->hwnd, message.c_str(), L"PowerCapslock - 模型加载成功", MB_OK | MB_ICONINFORMATION);
+        }
+
         DestroyWindow(owner->hwnd);
     }
 };
@@ -756,6 +806,7 @@ extern "C" bool ShowConfigDialog(HWND hParent) {
     state.testAction = GetEnvString(L"POWERCAPSLOCK_CONFIG_WEBVIEW_TEST_ACTION");
     state.testBrowseLogPath = GetEnvString(L"POWERCAPSLOCK_CONFIG_WEBVIEW_TEST_LOG_PATH");
     state.testBrowseModelPath = GetEnvString(L"POWERCAPSLOCK_CONFIG_WEBVIEW_TEST_MODEL_PATH");
+    state.testSkipModelLoad = !GetEnvString(L"POWERCAPSLOCK_CONFIG_WEBVIEW_TEST_SKIP_MODEL_LOAD").empty();
 
     HWND hwnd = CreateWindowExW(
         WS_EX_APPWINDOW,

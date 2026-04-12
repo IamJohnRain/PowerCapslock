@@ -575,6 +575,7 @@ class ConfigFunctionSuite:
     ) -> tuple[bool, str]:
         env = {
             "POWERCAPSLOCK_CONFIG_WEBVIEW_TEST_ACTION": action,
+            "POWERCAPSLOCK_CONFIG_WEBVIEW_TEST_SKIP_MODEL_LOAD": "1",
         }
         if log_path is not None:
             env["POWERCAPSLOCK_CONFIG_WEBVIEW_TEST_LOG_PATH"] = self.path_for_config(log_path)

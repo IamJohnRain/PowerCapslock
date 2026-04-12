@@ -24,6 +24,7 @@ static HHOOK g_hHook = NULL;
 static char* g_testMappingFrom = NULL;
 static char* g_testMappingTo = NULL;
 static char* g_testMappingOutputPath = NULL;
+static char* g_testModelPath = NULL;
 
 // 命令行覆盖配置
 static int g_cmdEnableVoice = -1;  // -1: no change, 0: disable, 1: enable
@@ -72,26 +73,12 @@ static BOOL InitializeModules(void) {
 
     // 检查语音输入配置，如果用户还没选择过是否启用，检查模型是否存在再决定是否询问
     if (!mutableConfig->voiceInputAsked) {
-        // 先检查模型文件是否已经存在
-        char modelDir[MAX_PATH];
-        GetModuleFileNameA(NULL, modelDir, MAX_PATH);
-        char* lastSlash = strrchr(modelDir, '\\');
-        if (lastSlash != NULL) {
-            *(lastSlash + 1) = '\0';
-            strcat(modelDir, "models");
-        }
-        char modelPath[MAX_PATH];
-        snprintf(modelPath, sizeof(modelPath),
-                 "%s\\SenseVoice-Small\\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\\model.onnx",
-                 modelDir);
-
-        // 如果模型已经存在，直接启用，不再询问
-        DWORD modelAttr = GetFileAttributesA(modelPath);
-        if (modelAttr != INVALID_FILE_ATTRIBUTES) {
+        VoiceModelCheckResult modelCheck;
+        if (VoiceCheckModelDirectory(mutableConfig->modelDirPath, &modelCheck)) {
             mutableConfig->voiceInputEnabled = true;
             mutableConfig->voiceInputAsked = true;
             ConfigSave(NULL);
-            LOG_INFO("Model found, voice input automatically enabled");
+            LOG_INFO("Model found at configured path, voice input automatically enabled: %s", modelCheck.resolvedRoot);
         } else {
             // 模型不存在，询问用户是否启用
             int result = MessageBoxW(NULL,
@@ -115,7 +102,7 @@ static BOOL InitializeModules(void) {
                     L"   下载: PowerCapslock-v0.2.0-model-SenseVoice-Small.zip\n\n"
                     L"2. 解压后放到 models/SenseVoice-Small/ 目录\n"
                     L"   最终路径应该是: models/SenseVoice-Small/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/model.onnx\n\n"
-                    L"3. 重启 PowerCapslock 即可使用",
+                    L"3. 在配置页面选择模型目录，程序会立即检测并加载",
                     L"PowerCapslock - 模型下载提示",
                     MB_OK | MB_ICONINFORMATION);
 
@@ -160,16 +147,7 @@ static BOOL InitializeModules(void) {
             // 初始化语音提示窗口模块
             VoicePromptInit();
 
-            // 初始化语音识别模块
-            char modelDir[MAX_PATH];
-            GetModuleFileNameA(NULL, modelDir, MAX_PATH);
-            char* lastSlash = strrchr(modelDir, '\\');
-            if (lastSlash != NULL) {
-                *(lastSlash + 1) = '\0';
-                strcat(modelDir, "models");
-            }
-
-            if (VoiceInit(modelDir)) {
+            if (VoiceInit(config->modelDirPath)) {
                 LOG_INFO("Voice recognition initialized successfully");
             } else {
                 LOG_INFO("Voice recognition not available: model not loaded");
@@ -179,7 +157,7 @@ static BOOL InitializeModules(void) {
                         L"语音识别模型未找到！\n\n"
                         L"请确保模型已放置到正确位置：\n"
                         L"models/SenseVoice-Small/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/model.onnx\n\n"
-                        L"你可以重新下载模型放入该位置后重启程序。",
+                        L"你可以重新下载模型，然后在配置页面重新选择模型目录，程序会立即检测并加载。",
                         L"PowerCapslock - 语音输入",
                         MB_OK | MB_ICONWARNING);
                 }
@@ -280,19 +258,10 @@ static int RunVoiceTestMode(const char* outputPath) {
     }
     LOG_INFO("Audio module initialized");
 
-    // 构建模型路径
-    char modelDir[MAX_PATH];
-    GetModuleFileNameA(NULL, modelDir, MAX_PATH);
-    char* lastSlash = strrchr(modelDir, '\\');
-    if (lastSlash != NULL) {
-        *(lastSlash + 1) = '\0';
-        strcat(modelDir, "models");
-    }
-
     // 初始化语音识别
-    if (!VoiceInit(modelDir)) {
-        LOG_ERROR("Failed to load voice recognition model from: %s", modelDir);
-        printf("ERROR: Failed to load voice recognition model from: %s\n", modelDir);
+    if (!VoiceInit(config->modelDirPath)) {
+        LOG_ERROR("Failed to load voice recognition model from: %s", config->modelDirPath);
+        printf("ERROR: Failed to load voice recognition model from: %s\n", config->modelDirPath);
         printf("Please ensure model is placed at: models/SenseVoice-Small/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/model.onnx\n");
         AudioCleanup();
         LoggerCleanup();
@@ -309,7 +278,7 @@ static int RunVoiceTestMode(const char* outputPath) {
         return 1;
     }
 
-    LOG_INFO("Voice recognition model loaded successfully from: %s", modelDir);
+    LOG_INFO("Voice recognition model loaded successfully from: %s", config->modelDirPath);
     printf("Voice recognition model loaded successfully\n");
     printf("\n");
     printf("=== Please speak now, press ENTER when done ===\n");
@@ -568,12 +537,61 @@ static int RunToastWindowTest(void) {
     return 0;
 }
 
+static void PrintWideUtf8(const wchar_t* text) {
+    if (text == NULL) {
+        return;
+    }
+    int size = WideCharToMultiByte(CP_UTF8, 0, text, -1, NULL, 0, NULL, NULL);
+    if (size <= 0) {
+        return;
+    }
+    char* buffer = (char*)malloc((size_t)size);
+    if (buffer == NULL) {
+        return;
+    }
+    WideCharToMultiByte(CP_UTF8, 0, text, -1, buffer, size, NULL, NULL);
+    printf("%s", buffer);
+    free(buffer);
+}
+
+static int RunModelLoadTest(void) {
+    const char* modelPath;
+    VoiceModelCheckResult status;
+
+    g_hInstance = GetModuleHandle(NULL);
+    ConfigInit();
+    LoggerInit(ConfigGetLogPath());
+    LoggerSetLevel(LOG_LEVEL_INFO);
+    ConfigLoad(NULL);
+
+    modelPath = (g_testModelPath != NULL && g_testModelPath[0] != '\0')
+        ? g_testModelPath
+        : ConfigGet()->modelDirPath;
+
+    printf("Testing model path: %s\n", modelPath);
+    if (!VoiceReloadModel(modelPath, &status)) {
+        printf("FAILED: ");
+        PrintWideUtf8(status.reason[0] != L'\0' ? status.reason : L"unknown error");
+        printf("\n");
+        LoggerCleanup();
+        ConfigCleanup();
+        return 1;
+    }
+
+    printf("PASSED: %s loaded from %s\n", status.modelName, status.resolvedRoot);
+    VoiceCleanup();
+    LoggerCleanup();
+    ConfigCleanup();
+    return 0;
+}
+
 // 向前声明
 static int RunAudioFileTest(void);
 static int RunCapsLockAHookTest(const char* outputPath);
 static int RunKeyMappingTestMode(void);
 static int RunVoicePromptWindowTest(void);
 static int RunToastWindowTest(void);
+static int RunModelLoadTest(void);
 
 // 命令行模式枚举
 typedef enum {
@@ -586,7 +604,8 @@ typedef enum {
     CMD_MODE_TEST_CAPSLOCK_A = 6,
     CMD_MODE_TEST_KEY_MAPPING = 7,
     CMD_MODE_TEST_VOICE_PROMPT = 8,
-    CMD_MODE_TEST_TOAST = 9
+    CMD_MODE_TEST_TOAST = 9,
+    CMD_MODE_TEST_MODEL_LOAD = 10
 } CommandMode;
 
 // 保存音频文件测试参数
@@ -636,18 +655,9 @@ static int RunAudioFileTest(void) {
     }
     LOG_INFO("Audio module initialized");
 
-    // 构建模型路径
-    char modelDir[MAX_PATH];
-    GetModuleFileNameA(NULL, modelDir, MAX_PATH);
-    char* lastSlash = strrchr(modelDir, '\\');
-    if (lastSlash != NULL) {
-        *(lastSlash + 1) = '\0';
-        strcat(modelDir, "models");
-    }
-
-    if (!VoiceInit(modelDir)) {
-        LOG_ERROR("Failed to load voice recognition model from: %s", modelDir);
-        printf("ERROR: Failed to load voice recognition model from: %s\n", modelDir);
+    if (!VoiceInit(config->modelDirPath)) {
+        LOG_ERROR("Failed to load voice recognition model from: %s", config->modelDirPath);
+        printf("ERROR: Failed to load voice recognition model from: %s\n", config->modelDirPath);
         printf("Please ensure model is placed at: models/SenseVoice-Small/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/model.onnx\n");
         AudioCleanup();
         LoggerCleanup();
@@ -666,7 +676,7 @@ static int RunAudioFileTest(void) {
         return 1;
     }
 
-    LOG_INFO("Voice recognition model loaded successfully from: %s", modelDir);
+    LOG_INFO("Voice recognition model loaded successfully from: %s", config->modelDirPath);
     printf("Voice recognition model loaded successfully\n");
     printf("\n");
     fflush(stdout);
@@ -1148,6 +1158,16 @@ static CommandMode ParseCommandLine(LPSTR lpCmdLine, char** outputPath) {
             mode = CMD_MODE_TEST_TOAST;
             args += strlen("--test-toast");
         }
+        else if (strncmp(args, "--test-model-load", strlen("--test-model-load")) == 0 &&
+                (args[strlen("--test-model-load")] == ' ' || args[strlen("--test-model-load")] == '\0')) {
+            mode = CMD_MODE_TEST_MODEL_LOAD;
+            args += strlen("--test-model-load");
+            while (*args == ' ' || *args == '\t') args++;
+            if (*args != '\0') {
+                g_testModelPath = args;
+                break;
+            }
+        }
         else if (strncmp(args, "--disable-voice", strlen("--disable-voice")) == 0 &&
                 (args[strlen("--disable-voice")] == ' ' || args[strlen("--disable-voice")] == '\0')) {
             g_cmdEnableVoice = 0;
@@ -1218,6 +1238,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             ReleaseMutex(hMutex);
             CloseHandle(hMutex);
             return RunToastWindowTest();
+        case CMD_MODE_TEST_MODEL_LOAD:
+            ReleaseMutex(hMutex);
+            CloseHandle(hMutex);
+            return RunModelLoadTest();
         case CMD_MODE_TEST_AUDIO_FILE:
             ReleaseMutex(hMutex);
             CloseHandle(hMutex);

@@ -1,174 +1,216 @@
-# PowerCapslock
+﻿# PowerCapslock
 
-Windows 键盘热键映射工具 - 将 CapsLock 改造为强大的修饰键
+PowerCapslock 是一个 Windows 键盘增强工具，把 CapsLock 改造成高效修饰键，并提供本地离线语音输入能力。
 
 ## 功能特性
 
-- **方向键映射**: CapsLock + h/j/k/l → 左/下/上/右
-- **功能键映射**:
-  - CapsLock + i/o → Home/End
-  - CapsLock + u/p → PageDown/PageUp
-  - CapsLock + 1-9,0,-,= → F1-F12
-- **本地语音输入**: CapsLock + A 触发语音转文字（基于 sherpa-onnx 本地引擎）
-- **多语言支持**: 基于物理按键位置，不受键盘布局影响
-- **系统托盘**: 可视化控制，一键启用/禁用
-- **日志调试**: 详细的运行日志，便于排查问题
-- **开机启动**: 支持 Windows 开机自动运行
-- **可视化配置**: Web 配置页面，支持自定义键位映射和模型路径
+- **CapsLock 快捷映射**：按住 CapsLock 后配合 H/J/K/L、I/O、U/P、数字键等触发方向键、Home/End、PageUp/PageDown、F1-F12。
+- **可视化配置页面**：基于 WebView2 的现代化中文配置页，可修改日志目录、模型目录和按键映射。
+- **配置即时生效**：按键映射保存后立即更新；模型路径保存时会立即检测并热加载，无需重启。
+- **本地语音输入**：`CapsLock + A` 触发离线语音转文字，基于 sherpa-onnx + SenseVoice。
+- **系统托盘控制**：托盘菜单支持启用、禁用、查看日志、打开配置页面。
+- **现代提示窗**：语音听写、启用、禁用状态使用小型半透明提示窗。
+- **日志与测试覆盖**：配置页按钮、日志路径、模型路径、按键映射增删改均有功能测试覆盖。
 
 ## 快速开始
 
-### 安装
+1. 从 [GitHub Releases](https://github.com/IamJohnRain/PowerCapslock/releases) 下载最新主程序包。
+2. 解压 `PowerCapslock-v0.2.0-windows-x64.zip` 到任意目录。
+3. 运行 `powercapslock.exe`。
+4. 右键系统托盘图标，选择“配置”打开配置页面。
+5. 如需语音输入，另行下载 release 中的模型包，并在配置页选择模型目录。
 
-1. 下载最新版本 [GitHub Releases](https://github.com/IamJohnRain/PowerCapslock/releases)
-2. 解压到任意目录
-3. 右键 `install.bat`，选择"以管理员身份运行"
-4. 程序将自动完成安装并添加到开机启动项
+## 配置页面
 
-### 使用
+配置不再需要手写 JSON。打开托盘菜单中的“配置”即可修改路径和按键映射。
 
-- 安装后，CapsLock 键将作为修饰键
-- 按住 CapsLock + 映射键即可触发对应功能
-- 点击系统托盘图标可启用/禁用程序
-- 右键托盘图标 → 打开配置页面，可进行可视化配置
+![配置页面](docs/images/config-page.png)
 
-### 语音输入配置
+配置文件仍保存在当前用户目录，便于备份和迁移：
 
-1. 下载 sherpa-onnx SenseVoice 模型：
-   - 访问 [sherpa-onnx releases](https://github.com/k2-fsa/sherpa-onnx/releases)
-   - 下载 `sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2`
-   - 解压到任意目录
+- 配置文件：`%USERPROFILE%\.PowerCapslock\config\config.json`
+- 默认日志目录：`%USERPROFILE%\.PowerCapslock\logs`
+- 配置页面资源：`resources/config_ui.html`
 
-2. 在配置页面的"语音设置"中，设置模型路径
+配置页保存行为：
 
-3. 使用 CapsLock + A 触发语音输入
+- 修改日志目录后，新日志会写入保存后的目录。
+- 修改模型目录后，程序会立即检测 SenseVoice 模型是否可用。
+- 模型可用时会立即热加载并弹窗提示成功，不需要重启。
+- 模型不可用时会弹窗说明原因，例如目录不存在、缺少 `model.onnx` 或 `tokens.txt`。
+- 快捷映射支持新增、编辑、删除和恢复默认。
+
+## 语音模型
+
+主程序包不包含模型文件。语音模型来自 [FunAudioLLM/SenseVoice](https://github.com/FunAudioLLM/SenseVoice)，已作为单独 release 资产发布。
+
+推荐使用方式：
+
+1. 下载 `PowerCapslock-v0.2.0-model-SenseVoice-Small.zip`。
+2. 解压到程序目录或任意固定目录。
+3. 在配置页选择模型目录。
+4. 保存后等待弹窗提示 `SenseVoice-Small 模型加载成功`。
+5. 按住 `CapsLock + A` 开始听写，松开后自动输入识别结果。
+
+模型目录支持选择以下任意层级：
+
+- `models`
+- `models\SenseVoice-Small`
+- `models\SenseVoice-Small\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17`
+
+最终目录中必须能找到：
+
+- `model.onnx`
+- `tokens.txt`
 
 ## 项目结构
 
-```
+```text
 PowerCapslock/
-├── src/                  # 源代码
-│   ├── main.c           # 程序入口
-│   ├── hook.c/h         # 键盘钩子核心
-│   ├── keymap.c/h       # 键位映射管理
-│   ├── tray.c/h         # 系统托盘
-│   ├── config.c/h       # 配置文件
-│   ├── logger.c/h       # 日志系统
-│   ├── voice.c/h        # 语音识别
-│   ├── audio.c/h        # 音频采集
-│   ├── voice_prompt.c/h # 语音提示窗口
-│   ├── config_dialog_webview.cpp # Web配置页面
-│   └── ...
-├── resources/            # 资源文件
-├── test/                 # 测试脚本
-│   ├── config_function_test.py    # 配置功能测试
-│   ├── powercapslock_function_test.py  # 功能测试
-│   ├── webview_config_test.py     # Web配置测试
-│   └── test_capslock_a_bug.py     # CapsLock+A测试
-├── scripts/              # 构建和安装脚本
-│   ├── build.bat        # 构建脚本
-│   ├── install.bat      # 安装脚本
-│   └── uninstall.bat    # 卸载脚本
-├── lib/                  # 第三方库
-│   └── sherpa-onnx/     # sherpa-onnx 库
-├── build/                # 构建输出目录
-├── CMakeLists.txt       # CMake 配置
-├── README.md            # 项目说明
-├── CLAUDE.md            # Claude Code 指引
-└── index.html           # 项目主页
+├── src/
+│   ├── main.c                    # 程序入口、命令行测试入口
+│   ├── hook.c / hook.h           # 低级键盘钩子、CapsLock 组合键处理
+│   ├── keymap.c / keymap.h       # 按键映射表和映射查找
+│   ├── tray.c / tray.h           # 系统托盘、启用/禁用提示窗
+│   ├── config.c / config.h       # 用户配置读写与默认值
+│   ├── config_dialog_webview.cpp # WebView2 配置窗口和保存逻辑
+│   ├── voice.c / voice.h         # SenseVoice 模型检测、热加载、识别
+│   ├── audio.c / audio.h         # WASAPI 音频采集
+│   ├── voice_prompt.c / .h       # 语音听写提示窗
+│   ├── keyboard_layout.c / .h    # 物理键位与布局处理
+│   └── logger.c / logger.h       # 日志系统
+├── resources/
+│   ├── config_ui.html            # 配置页 HTML/CSS/JS
+│   ├── icon.ico
+│   ├── icon_disabled.ico
+│   └── resource.rc
+├── lib/
+│   ├── sherpa-onnx-v1.12.36-win-x64-shared-MT-Release/
+│   └── webview2/                 # WebView2 头文件和 WebView2Loader.dll
+├── models/                       # 本地开发用模型目录，release 主包不包含模型
+├── scripts/
+│   ├── build.bat                 # 推荐构建脚本，会先停止单例进程
+│   ├── package_release.ps1       # release 打包脚本
+│   ├── install.bat
+│   └── uninstall.bat
+├── test/
+│   ├── config_function_test.py   # 配置页、日志路径、模型路径、映射增删改测试
+│   └── output/                   # 测试报告输出目录
+├── docs/
+│   └── images/                   # README 截图素材
+├── CMakeLists.txt
+└── README.md
 ```
 
-## 构建指南
+## 构建
 
 ### 环境要求
 
 - Windows 10/11
-- MinGW-w64 (推荐) 或 MSVC
 - CMake 3.10+
-- Python 3.8+ (用于测试)
+- MinGW-w64 或 Visual Studio C++ Build Tools
+- Python 3.8+，用于运行测试
+- 本仓库中的 `lib/webview2` 与 `lib/sherpa-onnx-v1.12.36-win-x64-shared-MT-Release`
 
-### 构建步骤
+### 推荐构建方式
 
-**方式一：使用 build.bat（推荐）**
+软件是单例运行的。重新构建前需要停止已有进程，`scripts\build.bat` 已经内置这个步骤。
 
-```batch
-cd PowerCapslock
+```bat
+cd /d D:\code\PowerCapslock
 scripts\build.bat
 ```
 
-**方式二：手动构建**
+构建成功后输出：
 
-```batch
-cd PowerCapslock
-
-# 创建构建目录
-mkdir build
-cd build
-
-# 生成构建配置（MinGW）
-cmake .. -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
-
-# 编译
-mingw32-make -j4
-
-# 或者使用 MSVC
-cmake .. -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release
-nmake
+```text
+build\powercapslock.exe
+build\resources\config_ui.html
+build\WebView2Loader.dll
+build\onnxruntime.dll
+build\sherpa-onnx-c-api.dll
+build\sherpa-onnx-cxx-api.dll
 ```
 
-### 安装
+### 手动构建方式
 
-```batch
-# 以管理员身份运行安装脚本
-scripts\install.bat
+```bat
+cd /d D:\code\PowerCapslock
+
+taskkill /IM powercapslock.exe /F 2>NUL
+cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release --parallel
 ```
 
-安装脚本会：
-1. 复制可执行文件到 `%ProgramFiles%\PowerCapslock`
-2. 创建配置文件目录 `%APPDATA%\PowerCapslock`
-3. 添加到系统开机启动项
-4. 启动程序
+如果使用 MSVC，请在 “Developer Command Prompt for VS” 中执行：
+
+```bat
+cd /d D:\code\PowerCapslock
+
+taskkill /IM powercapslock.exe /F 2>NUL
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release --parallel
+```
 
 ## 测试
 
-### 运行功能测试
+跑测试前同样要停止单例进程。配置功能测试会自动备份并恢复当前用户配置。
 
-```batch
-# 确保程序未运行
-taskkill /F /IM PowerCapslock.exe 2>nul
-
-# 运行配置功能测试
-python test/config_function_test.py --stop-existing
-
-# 运行完整功能测试
-python test/powercapslock_function_test.py --stop-existing
-
-# 运行Web配置测试
-python test/webview_config_test.py --stop-existing
+```bat
+taskkill /IM powercapslock.exe /F 2>NUL
+python test\config_function_test.py --stop-existing
 ```
 
-### 测试覆盖
+本次 README 更新时重新运行的配置功能测试结果如下：
 
-- **配置功能测试**: 验证配置文件的读写、键位映射、日志设置等
-- **功能测试**: 验证键盘钩子、键位映射、系统托盘等功能
-- **Web配置测试**: 验证可视化配置页面的各项功能
-- **语音功能测试**: 验证语音输入、音频采集、模型加载等
+![配置功能测试](docs/images/config-function-tests.png)
+
+常用验证命令：
+
+```bat
+build\powercapslock.exe --test-model-load D:\code\PowerCapslock\models
+build\powercapslock.exe --test-voice-prompt
+build\powercapslock.exe --test-toast
+```
+
+测试覆盖：
+
+- 日志路径修改后重启写入新目录。
+- 模型路径读取、保存和命令行加载验证。
+- 快捷映射新增、编辑、删除后行为立即生效。
+- WebView 配置页浏览按钮、保存按钮、映射表单交互。
+
+## Release 打包
+
+正式 release 主程序包不包含模型文件。模型需作为单独资产发布。
+
+主程序包应包含：
+
+- `powercapslock.exe`
+- `resources/config_ui.html`
+- `WebView2Loader.dll`
+- `onnxruntime.dll`
+- `onnxruntime_providers_shared.dll`
+- `sherpa-onnx-c-api.dll`
+- `sherpa-onnx-cxx-api.dll`
+- 使用说明文件
+
+模型包单独上传，并在 release note 中说明来源、使用方式和对 SenseVoice 项目的致谢。
 
 ## 技术架构
 
-- **核心技术**: Windows Low-level Keyboard Hook (WH_KEYBOARD_LL)
-- **开发语言**: C11 / C++17
-- **构建工具**: CMake
-- **键位识别**: Scan Code（支持多语言布局）
-- **语音识别**: sherpa-onnx + SenseVoice 本地模型
-- **配置界面**: WebView2 (Microsoft Edge WebView2)
+- Windows Low-level Keyboard Hook：处理 CapsLock 修饰键与快捷映射。
+- WebView2：承载现代化配置页面。
+- WASAPI：采集麦克风音频。
+- sherpa-onnx + SenseVoice：本地离线语音识别。
+- CMake：构建 C11 / C++17 混合项目。
+
+## 致谢
+
+- 语音模型来自 [FunAudioLLM/SenseVoice](https://github.com/FunAudioLLM/SenseVoice)。感谢 SenseVoice 项目及贡献者提供优秀的语音识别模型。
+- 语音识别运行时基于 [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)。
+- 键位体验灵感来自 Vim 的高效移动方式。
 
 ## 许可证
 
 MIT License
-
-## 致谢
-
-- 感谢所有贡献者和测试者
-- 灵感来源于 Vim 编辑器的键位设计
-- 语音识别基于 [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) 项目

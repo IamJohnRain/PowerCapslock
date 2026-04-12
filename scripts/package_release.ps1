@@ -1,43 +1,51 @@
 param(
-    [string]$Version = "v0.1.2.preview"
+    [string]$Version = "v0.2.0",
+    [switch]$SkipBuild
 )
 
 $ErrorActionPreference = "Stop"
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $buildDir = Join-Path $repoRoot "build"
-$outputRoot = Join-Path $repoRoot ".release"
-$stagingDir = Join-Path $outputRoot "PowerCapslock-$Version"
-$zipPath = Join-Path $outputRoot "PowerCapslock-$Version.zip"
-$releaseNotes = Join-Path $repoRoot "docs\releases\$Version.md"
+$releaseDir = Join-Path $repoRoot ".release\$Version"
+$versionName = $Version.TrimStart("v")
+$stagingDir = Join-Path $releaseDir "PowerCapslock-$Version"
+$zipPath = Join-Path $releaseDir "PowerCapslock-$Version-windows-x64.zip"
+
+if (-not $SkipBuild) {
+    & (Join-Path $PSScriptRoot "build.bat")
+    if ($LASTEXITCODE -ne 0) {
+        throw "Build failed with exit code $LASTEXITCODE"
+    }
+}
 
 $requiredFiles = @(
     @{ Source = Join-Path $buildDir "powercapslock.exe"; Dest = "powercapslock.exe" }
+    @{ Source = Join-Path $buildDir "WebView2Loader.dll"; Dest = "WebView2Loader.dll" }
     @{ Source = Join-Path $buildDir "onnxruntime.dll"; Dest = "onnxruntime.dll" }
     @{ Source = Join-Path $buildDir "onnxruntime_providers_shared.dll"; Dest = "onnxruntime_providers_shared.dll" }
     @{ Source = Join-Path $buildDir "sherpa-onnx-c-api.dll"; Dest = "sherpa-onnx-c-api.dll" }
     @{ Source = Join-Path $buildDir "sherpa-onnx-cxx-api.dll"; Dest = "sherpa-onnx-cxx-api.dll" }
-    @{ Source = Join-Path $repoRoot "scripts\install_release.bat"; Dest = "install.bat" }
-    @{ Source = Join-Path $repoRoot "scripts\uninstall_release.bat"; Dest = "uninstall.bat" }
-    @{ Source = Join-Path $repoRoot "config\config.json"; Dest = "config\config.json" }
-    @{ Source = Join-Path $repoRoot "resources\icon.ico"; Dest = "resources\icon.ico" }
-    @{ Source = Join-Path $repoRoot "resources\icon_disabled.ico"; Dest = "resources\icon_disabled.ico" }
-    @{ Source = Join-Path $repoRoot "README.md"; Dest = "README.md" }
-    @{ Source = $releaseNotes; Dest = "RELEASE_NOTES.md" }
+    @{ Source = Join-Path $buildDir "resources\config_ui.html"; Dest = "resources\config_ui.html" }
 )
 
 foreach ($item in $requiredFiles) {
-    if (-not (Test-Path $item.Source)) {
+    if (-not (Test-Path -LiteralPath $item.Source)) {
         throw "Required file not found: $($item.Source)"
     }
 }
 
-New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
+New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
 
-if (Test-Path $stagingDir) {
+if (Test-Path -LiteralPath $stagingDir) {
+    $resolvedStage = (Resolve-Path $stagingDir).Path
+    if (-not $resolvedStage.StartsWith($releaseDir, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing to remove unexpected path: $resolvedStage"
+    }
     Remove-Item -LiteralPath $stagingDir -Recurse -Force
 }
-if (Test-Path $zipPath) {
+
+if (Test-Path -LiteralPath $zipPath) {
     Remove-Item -LiteralPath $zipPath -Force
 }
 
@@ -52,15 +60,20 @@ foreach ($item in $requiredFiles) {
     Copy-Item -LiteralPath $item.Source -Destination $destination -Force
 }
 
-$modelsDir = Join-Path $stagingDir "models"
-New-Item -ItemType Directory -Force -Path $modelsDir | Out-Null
-Set-Content -Path (Join-Path $modelsDir "README.txt") -Encoding ASCII -Value @(
-    "Speech model files are not bundled in this preview package.",
-    "Place the downloaded model under:",
-    "models\SenseVoice-Small\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17\"
+Set-Content -Path (Join-Path $stagingDir "README.txt") -Encoding UTF8 -Value @(
+    "PowerCapslock $versionName",
+    "",
+    "Usage:",
+    "1. Extract this zip to any directory.",
+    "2. Run powercapslock.exe.",
+    "3. For voice input, download PowerCapslock-$Version-model-SenseVoice-Small.zip separately.",
+    "4. Open the configuration page from the tray menu, choose the model directory, then save.",
+    "5. If the model is valid, PowerCapslock loads it immediately without restart.",
+    "",
+    "Note: model files are not included in this main package."
 )
 
-Compress-Archive -Path $stagingDir -DestinationPath $zipPath -CompressionLevel Optimal
+Compress-Archive -Path (Join-Path $stagingDir "*") -DestinationPath $zipPath -CompressionLevel Optimal
 
 Write-Host "Release package created:"
 Write-Host "  $zipPath"

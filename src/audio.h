@@ -9,6 +9,8 @@
  */
 bool AudioInit(void);
 
+bool AudioIsInitialized(void);
+
 /**
  * 清理音频资源
  */

@@ -6,69 +6,57 @@ echo PowerCapslock Build Script
 echo ========================================
 echo.
 
-:: Check build directory
+set "ROOT=%~dp0.."
+pushd "%ROOT%" >nul
+
+echo Stopping running PowerCapslock instances...
+taskkill /IM powercapslock.exe /F >nul 2>nul
+
+where cmake >nul 2>&1
+if %errorlevel% neq 0 (
+    echo ERROR: CMake not found!
+    echo Please install CMake and add it to PATH.
+    popd >nul
+    exit /b 1
+)
+
 if not exist "build" (
     echo Creating build directory...
     mkdir build
 )
 
-:: Enter build directory
-cd build
-
-:: Detect compiler
-where cmake >nul 2>&1
-if %errorlevel% neq 0 (
-    echo ERROR: CMake not found!
-    echo Please install CMake and add it to PATH.
-    cd ..
-    exit /b 1
-)
-
-:: Detect MinGW
-where mingw32-make >nul 2>&1
-if %errorlevel% equ 0 (
-    echo Using MinGW compiler...
-    set GENERATOR=MinGW Makefiles
-    set MAKE_CMD=mingw32-make
-    goto :build
-)
-
-:: Detect MSVC
-where cl >nul 2>&1
-if %errorlevel% equ 0 (
-    echo Using MSVC compiler...
-    set GENERATOR=NMake Makefiles
-    set MAKE_CMD=nmake
-    goto :build
-)
-
-echo ERROR: No suitable compiler found!
-echo Please install MinGW-w64 or MSVC.
-cd ..
-exit /b 1
-
-:build
-:: Run CMake
 echo.
 echo Running CMake configuration...
-cmake .. -G "%GENERATOR%" -DCMAKE_BUILD_TYPE=Release
+if exist "build\CMakeCache.txt" (
+    cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+) else (
+    where mingw32-make >nul 2>&1
+    if %errorlevel% equ 0 (
+        cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
+    ) else (
+        where ninja >nul 2>&1
+        if %errorlevel% equ 0 (
+            cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+        ) else (
+            cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        )
+    )
+)
 if %errorlevel% neq 0 (
     echo ERROR: CMake configuration failed!
-    cd ..
+    popd >nul
     exit /b 1
 )
 
-:: Build
 echo.
 echo Building project...
-%MAKE_CMD% -j4
+cmake --build build --config Release --parallel
 if %errorlevel% neq 0 (
     echo ERROR: Build failed!
-    cd ..
+    popd >nul
     exit /b 1
 )
 
-:: Success
 echo.
 echo ========================================
 echo Build completed successfully!
@@ -76,4 +64,4 @@ echo Output: build\powercapslock.exe
 echo ========================================
 echo.
 
-cd ..
+popd >nul
