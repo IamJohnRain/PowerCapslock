@@ -422,6 +422,14 @@
                     <h3>🔒 轻量高效</h3>
                     <p>基于 C11 语言开发，占用资源极低，运行稳定流畅，不影响系统性能。</p>
                 </div>
+                <div class="feature-card">
+                    <h3>🎙️ 本地语音输入</h3>
+                    <p>基于 sherpa-onnx 本地语音识别引擎，无需联网即可语音转文字。支持 SenseVoice 多语言模型，隐私安全，响应快速。</p>
+                </div>
+                <div class="feature-card">
+                    <h3>⚙️ 可视化配置</h3>
+                    <p>内置 Web 配置页面，支持自定义模型路径、日志路径，可视化编辑按键映射，无需手动编辑 JSON 文件。</p>
+                </div>
             </div>
         </div>
     </section>
@@ -457,6 +465,11 @@
                         <td><span class="key-badge">CapsLock</span> + <span class="key-badge">L</span></td>
                         <td>→ 右方向键</td>
                         <td>向右移动光标</td>
+                    </tr>
+                    <tr>
+                        <td><span class="key-badge">CapsLock</span> + <span class="key-badge">A</span></td>
+                        <td>🎙️ 语音转文字</td>
+                        <td>按住开始录音，松开后自动识别并输入文字</td>
                     </tr>
                     <tr>
                         <td><span class="key-badge">CapsLock</span> + <span class="key-badge">I</span></td>
@@ -506,6 +519,13 @@
     <section class="advantages" id="advantages">
         <div class="container">
             <h2 class="section-title">核心优势</h2>
+            <div class="advantage-item">
+                <div class="advantage-icon">🎙️</div>
+                <div class="advantage-content">
+                    <h4>本地语音识别</h4>
+                    <p>基于 sherpa-onnx 本地引擎，无需联网即可语音转文字。支持 SenseVoice 多语言模型，数据不上传云端，隐私绝对安全，响应速度快。</p>
+                </div>
+            </div>
             <div class="advantage-item">
                 <div class="advantage-icon">🎨</div>
                 <div class="advantage-content">
@@ -561,6 +581,9 @@
                 <div class="tech-item">Low-level Keyboard Hook</div>
                 <div class="tech-item">Scan Code</div>
                 <div class="tech-item">JSON 配置</div>
+                <div class="tech-item">sherpa-onnx</div>
+                <div class="tech-item">SenseVoice</div>
+                <div class="tech-item">WebView2</div>
             </div>
         </div>
     </section>
@@ -590,6 +613,18 @@
                 <div class="install-step">
                     <h4>步骤 4: 自定义配置（可选）</h4>
                     <p>编辑配置文件 <code>%APPDATA%\PowerCapslock\config.json</code> 来自定义键位映射</p>
+                    <p>或使用内置的配置页面：右键托盘图标 → 打开配置页面，支持可视化编辑按键映射、设置语音模型等</p>
+                </div>
+                <div class="install-step">
+                    <h4>步骤 5: 语音输入配置（可选）</h4>
+                    <p><strong>5.1 下载语音模型</strong></p>
+                    <p>访问 <a href="https://github.com/k2-fsa/sherpa-onnx/releases" target="_blank">sherpa-onnx Releases</a></p>
+                    <p>下载模型文件：<code>sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2</code></p>
+                    <p>解压到任意目录（建议放在程序目录下的 models 文件夹）</p>
+                    <p><strong>5.2 配置语音输入</strong></p>
+                    <p>右键托盘图标 → 打开配置页面 → 语音设置</p>
+                    <p>填写模型路径，设置快捷键（默认 CapsLock + A）</p>
+                    <p>点击保存，即可使用语音输入功能</p>
                 </div>
             </div>
         </div>
