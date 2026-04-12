@@ -1,645 +1,904 @@
-
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PowerCapslock - Windows 键盘热键映射工具</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="PowerCapslock 是一款 Windows 键盘增强工具，把 CapsLock 变成高效修饰键，并提供本地离线语音输入与可视化配置。">
+  <title>PowerCapslock - Windows CapsLock 高效键盘工具</title>
+  <style>
+    :root {
+      --page: #eef8ff;
+      --page-2: #f7fcff;
+      --ink: #123047;
+      --muted: #557086;
+      --line: rgba(62, 132, 177, 0.2);
+      --glass: rgba(255, 255, 255, 0.62);
+      --glass-strong: rgba(255, 255, 255, 0.82);
+      --blue: #168ce5;
+      --cyan: #24c6dc;
+      --green: #18c58f;
+      --yellow: #f4b83f;
+      --coral: #ff6f61;
+      --shadow: 0 18px 48px rgba(48, 109, 153, 0.16);
+      --shadow-soft: 0 12px 32px rgba(48, 109, 153, 0.12);
+    }
 
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-        }
+    * {
+      box-sizing: border-box;
+    }
 
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 0 20px;
-        }
+    html {
+      scroll-behavior: smooth;
+    }
 
-        header {
-            background: rgba(255, 255, 255, 0.95);
-            padding: 20px 0;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-            position: sticky;
-            top: 0;
-            z-index: 100;
-        }
+    body {
+      margin: 0;
+      color: var(--ink);
+      font-family: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans SC", Arial, sans-serif;
+      letter-spacing: 0;
+      background:
+        radial-gradient(circle at 12% 4%, rgba(36, 198, 220, 0.18), transparent 28%),
+        radial-gradient(circle at 84% 16%, rgba(244, 184, 63, 0.2), transparent 26%),
+        linear-gradient(180deg, var(--page), var(--page-2) 46%, #ffffff);
+      min-height: 100vh;
+    }
 
-        nav {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
+    img {
+      max-width: 100%;
+      display: block;
+    }
 
-        .logo {
-            font-size: 24px;
-            font-weight: bold;
-            color: #667eea;
-        }
+    a {
+      color: inherit;
+    }
 
-        .nav-links {
-            display: flex;
-            gap: 30px;
-        }
+    .container {
+      width: min(1120px, calc(100% - 40px));
+      margin: 0 auto;
+    }
 
-        .nav-links a {
-            text-decoration: none;
-            color: #333;
-            font-weight: 500;
-            transition: color 0.3s;
-        }
+    .site-header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.68);
+      background: rgba(238, 248, 255, 0.78);
+      backdrop-filter: blur(18px);
+      box-shadow: 0 8px 26px rgba(55, 113, 154, 0.08);
+    }
 
-        .nav-links a:hover {
-            color: #667eea;
-        }
+    .nav {
+      min-height: 72px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
 
-        .hero {
-            text-align: center;
-            padding: 100px 0;
-            color: white;
-        }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 800;
+      font-size: 18px;
+      text-decoration: none;
+      white-space: nowrap;
+    }
 
-        .hero h1 {
-            font-size: 48px;
-            margin-bottom: 20px;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
-        }
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(255, 255, 255, 0.8);
+      border-radius: 8px;
+      color: #ffffff;
+      background:
+        linear-gradient(135deg, rgba(22, 140, 229, 0.95), rgba(24, 197, 143, 0.82)),
+        rgba(255, 255, 255, 0.5);
+      box-shadow: var(--shadow-soft);
+      font-size: 14px;
+    }
 
-        .hero p {
-            font-size: 20px;
-            margin-bottom: 30px;
-            opacity: 0.9;
-        }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
 
-        .cta-button {
-            display: inline-block;
-            background: white;
-            color: #667eea;
-            padding: 15px 40px;
-            border-radius: 30px;
-            text-decoration: none;
-            font-weight: bold;
-            font-size: 18px;
-            transition: transform 0.3s, box-shadow 0.3s;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-            margin: 10px;
-        }
+    .nav-links a {
+      padding: 9px 12px;
+      border-radius: 8px;
+      color: #29506a;
+      font-size: 14px;
+      font-weight: 700;
+      text-decoration: none;
+      transition: background 160ms ease, color 160ms ease, transform 160ms ease;
+    }
 
-        .cta-button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
-        }
+    .nav-links a:hover {
+      color: #0a6fb7;
+      background: rgba(255, 255, 255, 0.72);
+      transform: translateY(-1px);
+    }
 
-        .download-button {
-            display: inline-block;
-            background: #764ba2;
-            color: white;
-            padding: 15px 40px;
-            border-radius: 30px;
-            text-decoration: none;
-            font-weight: bold;
-            font-size: 18px;
-            transition: transform 0.3s, box-shadow 0.3s;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-            margin: 10px;
-        }
+    .hero {
+      padding: 0;
+      min-height: calc(82vh - 72px);
+      display: grid;
+      align-items: center;
+      color: #ffffff;
+      background:
+        linear-gradient(90deg, rgba(7, 45, 69, 0.9), rgba(9, 73, 88, 0.62), rgba(9, 73, 88, 0.24)),
+        url("docs/images/config-page.png") center / cover no-repeat;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.72);
+    }
 
-        .download-button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
-            background: #8b5cf6;
-        }
+    .hero-inner {
+      padding: 52px 0 54px;
+      max-width: 760px;
+    }
 
-        .button-group {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 15px;
-        }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 18px;
+      padding: 8px 12px;
+      border: 1px solid rgba(255, 255, 255, 0.56);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.14);
+      backdrop-filter: blur(12px);
+      font-size: 14px;
+      font-weight: 700;
+    }
 
-        .features {
-            padding: 80px 0;
-            background: white;
-        }
+    .hero h1 {
+      margin: 0;
+      max-width: 720px;
+      font-size: 48px;
+      line-height: 1.08;
+      letter-spacing: 0;
+      text-wrap: balance;
+    }
 
-        .section-title {
-            text-align: center;
-            font-size: 36px;
-            margin-bottom: 60px;
-            color: #333;
-        }
+    .hero p {
+      margin: 18px 0 0;
+      max-width: 660px;
+      color: rgba(242, 251, 255, 0.9);
+      font-size: 18px;
+      line-height: 1.85;
+    }
 
-        .feature-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 30px;
-        }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 24px;
+    }
 
-        .feature-card {
-            background: #f8f9fa;
-            padding: 30px;
-            border-radius: 15px;
-            transition: transform 0.3s, box-shadow 0.3s;
-            border-left: 4px solid #667eea;
-        }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 0 18px;
+      border: 1px solid rgba(255, 255, 255, 0.72);
+      border-radius: 8px;
+      color: #07364e;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(190, 235, 255, 0.56)),
+        rgba(255, 255, 255, 0.48);
+      box-shadow: var(--shadow-soft);
+      font-weight: 800;
+      text-decoration: none;
+      transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+    }
 
-        .feature-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-        }
+    .button:hover {
+      transform: translateY(-2px);
+      border-color: rgba(36, 198, 220, 0.9);
+      box-shadow:
+        0 18px 36px rgba(36, 198, 220, 0.24),
+        0 0 0 4px rgba(255, 255, 255, 0.18);
+    }
 
-        .feature-card h3 {
-            font-size: 24px;
-            margin-bottom: 15px;
-            color: #667eea;
-        }
+    .button.secondary {
+      color: #ffffff;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.08)),
+        rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(12px);
+    }
 
-        .feature-card p {
-            color: #666;
-            line-height: 1.8;
-        }
+    .hero-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 24px;
+    }
 
-        .key-mappings {
-            padding: 80px 0;
-            background: #f8f9fa;
-        }
+    .tag {
+      padding: 8px 11px;
+      border: 1px solid rgba(255, 255, 255, 0.46);
+      border-radius: 8px;
+      color: rgba(255, 255, 255, 0.88);
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(12px);
+      font-size: 13px;
+      font-weight: 700;
+    }
 
-        .mapping-table {
-            width: 100%;
-            border-collapse: collapse;
-            background: white;
-            border-radius: 10px;
-            overflow: hidden;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-        }
+    section {
+      padding: 82px 0;
+    }
 
-        .mapping-table th,
-        .mapping-table td {
-            padding: 15px 20px;
-            text-align: left;
-            border-bottom: 1px solid #e9ecef;
-        }
+    .section-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(240px, 390px);
+      gap: 28px;
+      align-items: end;
+      margin-bottom: 34px;
+    }
 
-        .mapping-table th {
-            background: #667eea;
-            color: white;
-            font-weight: 600;
-        }
+    .kicker {
+      margin: 0 0 10px;
+      color: #0b78bd;
+      font-size: 14px;
+      font-weight: 900;
+    }
 
-        .mapping-table tr:hover {
-            background: #f8f9fa;
-        }
+    h2 {
+      margin: 0;
+      font-size: 34px;
+      line-height: 1.22;
+      letter-spacing: 0;
+    }
 
-        .key-badge {
-            display: inline-block;
-            background: #667eea;
-            color: white;
-            padding: 5px 15px;
-            border-radius: 5px;
-            font-family: monospace;
-            font-size: 14px;
-            margin: 0 3px;
-        }
+    .lead {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.9;
+    }
 
-        .advantages {
-            padding: 80px 0;
-            background: white;
-        }
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
 
-        .advantage-item {
-            display: flex;
-            align-items: center;
-            margin-bottom: 30px;
-            padding: 20px;
-            background: #f8f9fa;
-            border-radius: 10px;
-            transition: transform 0.3s;
-        }
+    .feature-card,
+    .step,
+    .shot,
+    .voice-panel,
+    .mapping-table-wrap {
+      border: 1px solid rgba(255, 255, 255, 0.76);
+      border-radius: 8px;
+      background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.82), rgba(226, 247, 255, 0.56)),
+        rgba(255, 255, 255, 0.56);
+      box-shadow: var(--shadow-soft);
+      backdrop-filter: blur(16px);
+    }
 
-        .advantage-item:hover {
-            transform: translateX(10px);
-        }
+    .feature-card {
+      padding: 22px;
+      transition: transform 160ms ease, box-shadow 160ms ease;
+    }
 
-        .advantage-icon {
-            font-size: 40px;
-            margin-right: 20px;
-            min-width: 60px;
-            text-align: center;
-        }
+    .feature-card:hover {
+      transform: translateY(-4px);
+      box-shadow: var(--shadow);
+    }
 
-        .advantage-content h4 {
-            font-size: 20px;
-            margin-bottom: 10px;
-            color: #333;
-        }
+    .feature-card h3 {
+      margin: 0 0 10px;
+      font-size: 19px;
+      line-height: 1.35;
+    }
 
-        .advantage-content p {
-            color: #666;
-        }
+    .feature-card p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.8;
+    }
 
-        .tech-stack {
-            padding: 80px 0;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-        }
+    .feature-card.accent-blue {
+      border-top: 4px solid var(--blue);
+    }
 
-        .tech-stack .section-title {
-            color: white;
-        }
+    .feature-card.accent-green {
+      border-top: 4px solid var(--green);
+    }
 
-        .tech-items {
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-            gap: 20px;
-        }
+    .feature-card.accent-yellow {
+      border-top: 4px solid var(--yellow);
+    }
 
-        .tech-item {
-            background: rgba(255, 255, 255, 0.1);
-            padding: 20px 30px;
-            border-radius: 10px;
-            backdrop-filter: blur(10px);
-            font-size: 18px;
-            font-weight: 500;
-        }
+    .feature-card.accent-coral {
+      border-top: 4px solid var(--coral);
+    }
 
-        .installation {
-            padding: 80px 0;
-            background: white;
-        }
+    .showcase {
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.52), rgba(226, 247, 255, 0.62)),
+        radial-gradient(circle at 8% 18%, rgba(24, 197, 143, 0.16), transparent 28%);
+    }
 
-        .install-steps {
-            max-width: 800px;
-            margin: 0 auto;
-        }
+    .shot-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.08fr) minmax(280px, 0.92fr);
+      gap: 18px;
+      align-items: stretch;
+    }
 
-        .install-step {
-            background: #f8f9fa;
-            padding: 25px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            border-left: 4px solid #764ba2;
-        }
+    .shot {
+      overflow: hidden;
+    }
 
-        .install-step h4 {
-            font-size: 18px;
-            margin-bottom: 10px;
-            color: #333;
-        }
+    .shot img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      background: #ffffff;
+    }
 
-        .install-step code {
-            background: #e9ecef;
-            padding: 2px 8px;
-            border-radius: 3px;
-            font-family: 'Courier New', monospace;
-        }
+    .shot-caption {
+      padding: 14px 16px 16px;
+      border-top: 1px solid var(--line);
+      color: #31536c;
+      font-size: 14px;
+      line-height: 1.7;
+      background: rgba(255, 255, 255, 0.6);
+    }
 
-        footer {
-            background: #333;
-            color: white;
-            padding: 40px 0;
-            text-align: center;
-        }
+    .shot.stack {
+      display: grid;
+      grid-template-rows: 1fr auto;
+    }
 
-        .footer-links {
-            margin-bottom: 20px;
-        }
+    .workflow {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 20px;
+    }
 
-        .footer-links a {
-            color: white;
-            text-decoration: none;
-            margin: 0 15px;
-            transition: opacity 0.3s;
-        }
+    .step {
+      padding: 18px;
+    }
 
-        .footer-links a:hover {
-            opacity: 0.8;
-        }
+    .step strong {
+      display: block;
+      margin-bottom: 8px;
+      color: #0d679f;
+      font-size: 15px;
+    }
 
-        .copyright {
-            opacity: 0.7;
-            font-size: 14px;
-        }
+    .step span {
+      color: var(--muted);
+      line-height: 1.75;
+    }
 
-        @media (max-width: 768px) {
-            .hero h1 {
-                font-size: 32px;
-            }
+    .voice {
+      background:
+        radial-gradient(circle at 86% 16%, rgba(255, 111, 97, 0.16), transparent 24%),
+        linear-gradient(180deg, #ffffff, #f3fbff);
+    }
 
-            .hero p {
-                font-size: 16px;
-            }
+    .voice-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 360px;
+      gap: 26px;
+      align-items: center;
+    }
 
-            .nav-links {
-                display: none;
-            }
+    .voice-panel {
+      min-height: 260px;
+      display: grid;
+      place-items: center;
+      padding: 34px;
+      background:
+        radial-gradient(circle at 28% 22%, rgba(36, 198, 220, 0.2), transparent 28%),
+        linear-gradient(145deg, rgba(255, 255, 255, 0.86), rgba(222, 246, 255, 0.64));
+    }
 
-            .feature-grid {
-                grid-template-columns: 1fr;
-            }
+    .voice-panel img {
+      width: 260px;
+      image-rendering: auto;
+      filter: drop-shadow(0 22px 38px rgba(24, 61, 88, 0.18));
+    }
 
-            .mapping-table {
-                font-size: 14px;
-            }
+    .check-list {
+      display: grid;
+      gap: 12px;
+      margin: 24px 0 0;
+      padding: 0;
+      list-style: none;
+    }
 
-            .mapping-table th,
-            .mapping-table td {
-                padding: 10px;
-            }
-        }
-    </style>
+    .check-list li {
+      position: relative;
+      padding-left: 26px;
+      color: #355a72;
+      line-height: 1.8;
+    }
+
+    .check-list li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0.72em;
+      width: 10px;
+      height: 10px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--green), var(--cyan));
+      box-shadow: 0 0 0 4px rgba(24, 197, 143, 0.12);
+    }
+
+    .mapping {
+      background:
+        linear-gradient(180deg, rgba(238, 248, 255, 0.64), rgba(255, 255, 255, 0.82)),
+        radial-gradient(circle at 16% 18%, rgba(244, 184, 63, 0.18), transparent 22%);
+    }
+
+    .mapping-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(280px, 0.92fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .mapping-table-wrap {
+      overflow: hidden;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: rgba(255, 255, 255, 0.72);
+    }
+
+    th,
+    td {
+      padding: 15px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: #0c639a;
+      background: rgba(226, 247, 255, 0.86);
+      font-size: 14px;
+    }
+
+    td {
+      color: #355a72;
+      line-height: 1.65;
+    }
+
+    .kbd {
+      display: inline-flex;
+      min-height: 24px;
+      align-items: center;
+      padding: 0 8px;
+      border: 1px solid rgba(18, 48, 71, 0.12);
+      border-radius: 6px;
+      color: #123047;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(221, 241, 255, 0.7)),
+        #ffffff;
+      box-shadow: inset 0 -1px 0 rgba(18, 48, 71, 0.08);
+      font-family: Consolas, "Microsoft YaHei UI", monospace;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    code {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      padding: 0 6px;
+      border: 1px solid rgba(18, 48, 71, 0.1);
+      border-radius: 6px;
+      color: #123047;
+      background: rgba(255, 255, 255, 0.68);
+      font-family: Consolas, "Microsoft YaHei UI", monospace;
+      font-size: 0.94em;
+    }
+
+    .download {
+      background:
+        radial-gradient(circle at 90% 12%, rgba(36, 198, 220, 0.18), transparent 24%),
+        linear-gradient(180deg, #ffffff, #eef8ff);
+    }
+
+    .download-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .footer {
+      padding: 42px 0;
+      border-top: 1px solid var(--line);
+      color: #45667c;
+      background: rgba(255, 255, 255, 0.68);
+    }
+
+    .footer-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      flex-wrap: wrap;
+    }
+
+    .footer-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .footer-links a {
+      color: #0c639a;
+      font-weight: 800;
+      text-decoration: none;
+    }
+
+    .footer-links a:hover {
+      text-decoration: underline;
+    }
+
+    @media (max-width: 920px) {
+      .nav-links {
+        display: none;
+      }
+
+      .hero {
+        min-height: calc(78vh - 72px);
+      }
+
+      .hero h1 {
+        font-size: 40px;
+      }
+
+      .section-head,
+      .shot-grid,
+      .voice-layout,
+      .mapping-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .feature-grid,
+      .workflow,
+      .download-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .voice-panel {
+        min-height: 190px;
+      }
+    }
+
+    @media (max-height: 700px) {
+      .hero-inner {
+        padding: 34px 0 32px;
+      }
+
+      .hero h1 {
+        font-size: 42px;
+      }
+
+      .hero p {
+        margin-top: 14px;
+        line-height: 1.65;
+      }
+
+      .hero-tags {
+        display: none;
+      }
+    }
+
+    @media (max-width: 620px) {
+      .container {
+        width: min(100% - 28px, 1120px);
+      }
+
+      section {
+        padding: 58px 0;
+      }
+
+      .hero {
+        min-height: calc(76vh - 72px);
+      }
+
+      .hero-inner {
+        padding: 42px 0 44px;
+      }
+
+      .hero h1 {
+        font-size: 32px;
+      }
+
+      .hero p {
+        font-size: 16px;
+      }
+
+      h2 {
+        font-size: 27px;
+      }
+
+      .feature-grid,
+      .workflow,
+      .download-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .actions {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .button {
+        width: 100%;
+      }
+
+      th,
+      td {
+        padding: 12px;
+        font-size: 14px;
+      }
+    }
+  </style>
 </head>
 <body>
-    <header>
-        <div class="container">
-            <nav>
-                <div class="logo">⌨️ PowerCapslock</div>
-                <div class="nav-links">
-                    <a href="#features">功能特性</a>
-                    <a href="#mappings">键位映射</a>
-                    <a href="#advantages">核心优势</a>
-                    <a href="#installation">安装指南</a>
-                </div>
-            </nav>
+  <header class="site-header">
+    <div class="container">
+      <nav class="nav" aria-label="主导航">
+        <a class="brand" href="#top">
+          <span class="brand-mark">CAP</span>
+          <span>PowerCapslock</span>
+        </a>
+        <div class="nav-links">
+          <a href="#features">能力</a>
+          <a href="#config">配置</a>
+          <a href="#voice">语音</a>
+          <a href="#mapping">映射</a>
+          <a href="#download">下载</a>
         </div>
-    </header>
+      </nav>
+    </div>
+  </header>
 
-    <section class="hero">
-        <div class="container">
-            <h1>将 CapsLock 键改造成强大的修饰键</h1>
-            <p>提升 Windows 键盘效率的神器，灵感来源于 Vim 编辑器</p>
-            <div class="button-group">
-                <a href="https://github.com/IamJohnRain/PowerCapslock/releases" target="_blank" class="download-button">📥 下载最新版本</a>
-                <a href="#installation" class="cta-button">📖 查看安装指南</a>
-            </div>
+  <main id="top">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="container">
+        <div class="hero-inner">
+          <div class="eyebrow">Windows 本地键盘增强工具 · v0.2.0</div>
+          <h1 id="hero-title">把 CapsLock 变成高效控制键</h1>
+          <p>方向移动、功能键、本地语音输入和可视化配置集中在一个轻量工具里。右手不用频繁离开主键区，配置保存后立即生效。</p>
+          <div class="actions">
+            <a class="button" href="https://github.com/IamJohnRain/PowerCapslock/releases/download/v0.2.0/PowerCapslock-v0.2.0-windows-x64.zip">下载 Windows 主程序</a>
+            <a class="button secondary" href="https://github.com/IamJohnRain/PowerCapslock/releases/tag/v0.2.0">查看 v0.2.0 Release</a>
+          </div>
+          <div class="hero-tags" aria-label="核心能力">
+            <span class="tag">CapsLock + H/J/K/L</span>
+            <span class="tag">WebView2 配置中心</span>
+            <span class="tag">SenseVoice 离线识别</span>
+            <span class="tag">模型热加载</span>
+          </div>
         </div>
+      </div>
     </section>
 
-    <section class="features" id="features">
-        <div class="container">
-            <h2 class="section-title">功能特性</h2>
-            <div class="feature-grid">
-                <div class="feature-card">
-                    <h3>🎯 方向键映射</h3>
-                    <p>将 CapsLock + h/j/k/l 映射为左/下/上/右方向键，无需离开主键盘区域即可快速导航，大幅提升操作效率。</p>
-                </div>
-                <div class="feature-card">
-                    <h3>⚡ 功能键映射</h3>
-                    <p>支持 Home/End、PageDown/PageUp 以及 F1-F12 等常用功能键的快捷访问，让常用键位触手可及。</p>
-                </div>
-                <div class="feature-card">
-                    <h3>🌍 多语言支持</h3>
-                    <p>基于物理按键位置（Scan Code）进行识别，完全不受键盘布局影响，支持所有语言和布局。</p>
-                </div>
-                <div class="feature-card">
-                    <h3>🖥️ 系统托盘</h3>
-                    <p>提供可视化的托盘图标，支持一键启用/禁用功能，右键菜单提供更多操作选项。</p>
-                </div>
-                <div class="feature-card">
-                    <h3>📝 日志调试</h3>
-                    <p>详细的运行日志记录，便于排查问题和调试，支持多级别日志输出。</p>
-                </div>
-                <div class="feature-card">
-                    <h3>🚀 开机启动</h3>
-                    <p>支持 Windows 开机自动运行，安装后即可享受无缝的键盘增强体验。</p>
-                </div>
-                <div class="feature-card">
-                    <h3>⚙️ 配置灵活</h3>
-                    <p>使用 JSON 配置文件管理所有映射设置，支持自定义键位映射和功能配置。</p>
-                </div>
-                <div class="feature-card">
-                    <h3>🔒 轻量高效</h3>
-                    <p>基于 C11 语言开发，占用资源极低，运行稳定流畅，不影响系统性能。</p>
-                </div>
-                <div class="feature-card">
-                    <h3>🎙️ 本地语音输入</h3>
-                    <p>基于 sherpa-onnx 本地语音识别引擎，无需联网即可语音转文字。支持 SenseVoice 多语言模型，隐私安全，响应快速。</p>
-                </div>
-                <div class="feature-card">
-                    <h3>⚙️ 可视化配置</h3>
-                    <p>内置 Web 配置页面，支持自定义模型路径、日志路径，可视化编辑按键映射，无需手动编辑 JSON 文件。</p>
-                </div>
-            </div>
+    <section id="features" aria-labelledby="features-title">
+      <div class="container">
+        <div class="section-head">
+          <div>
+            <p class="kicker">日常输入更顺手</p>
+            <h2 id="features-title">一个 CapsLock，连接导航、功能键和语音输入</h2>
+          </div>
+          <p class="lead">默认映射覆盖方向键、Home、End、PageUp、PageDown 和 F1-F12。需要个性化时，可以直接在配置中心新增、编辑或删除映射。</p>
         </div>
+        <div class="feature-grid">
+          <article class="feature-card accent-blue">
+            <h3>主键区完成光标移动</h3>
+            <p>按住 CapsLock 配合 H/J/K/L，即可触发左、下、上、右方向键。</p>
+          </article>
+          <article class="feature-card accent-green">
+            <h3>按键映射即时生效</h3>
+            <p>保存配置后重新构建映射表，新增、编辑和删除无需重启程序。</p>
+          </article>
+          <article class="feature-card accent-yellow">
+            <h3>模型路径即时检测</h3>
+            <p>选择 SenseVoice 模型目录后立即校验并加载；不可用时直接给出原因。</p>
+          </article>
+          <article class="feature-card accent-coral">
+            <h3>本地离线语音输入</h3>
+            <p>基于 sherpa-onnx 与 SenseVoice，语音识别在本机完成，不依赖云端上传。</p>
+          </article>
+          <article class="feature-card accent-blue">
+            <h3>日志路径可配置</h3>
+            <p>日志目录可以在配置中心修改，重启后新日志写入新的保存位置。</p>
+          </article>
+          <article class="feature-card accent-green">
+            <h3>系统托盘常驻</h3>
+            <p>托盘菜单支持启用、禁用、查看日志、打开配置和退出程序。</p>
+          </article>
+        </div>
+      </div>
     </section>
 
-    <section class="key-mappings" id="mappings">
-        <div class="container">
-            <h2 class="section-title">键位映射表</h2>
-            <table class="mapping-table">
-                <thead>
-                    <tr>
-                        <th>按键组合</th>
-                        <th>映射功能</th>
-                        <th>说明</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td><span class="key-badge">CapsLock</span> + <span class="key-badge">H</span></td>
-                        <td>← 左方向键</td>
-                        <td>向左移动光标</td>
-                    </tr>
-                    <tr>
-                        <td><span class="key-badge">CapsLock</span> + <span class="key-badge">J</span></td>
-                        <td>↓ 下方向键</td>
-                        <td>向下移动光标</td>
-                    </tr>
-                    <tr>
-                        <td><span class="key-badge">CapsLock</span> + <span class="key-badge">K</span></td>
-                        <td>↑ 上方向键</td>
-                        <td>向上移动光标</td>
-                    </tr>
-                    <tr>
-                        <td><span class="key-badge">CapsLock</span> + <span class="key-badge">L</span></td>
-                        <td>→ 右方向键</td>
-                        <td>向右移动光标</td>
-                    </tr>
-                    <tr>
-                        <td><span class="key-badge">CapsLock</span> + <span class="key-badge">A</span></td>
-                        <td>🎙️ 语音转文字</td>
-                        <td>按住开始录音，松开后自动识别并输入文字</td>
-                    </tr>
-                    <tr>
-                        <td><span class="key-badge">CapsLock</span> + <span class="key-badge">I</span></td>
-                        <td>Home 键</td>
-                        <td>跳转到行首</td>
-                    </tr>
-                    <tr>
-                        <td><span class="key-badge">CapsLock</span> + <span class="key-badge">O</span></td>
-                        <td>End 键</td>
-                        <td>跳转到行尾</td>
-                    </tr>
-                    <tr>
-                        <td><span class="key-badge">CapsLock</span> + <span class="key-badge">U</span></td>
-                        <td>PageDown 键</td>
-                        <td>向下翻页</td>
-                    </tr>
-                    <tr>
-                        <td><span class="key-badge">CapsLock</span> + <span class="key-badge">P</span></td>
-                        <td>PageUp 键</td>
-                        <td>向上翻页</td>
-                    </tr>
-                    <tr>
-                        <td><span class="key-badge">CapsLock</span> + <span class="key-badge">1-9</span></td>
-                        <td>F1-F9 键</td>
-                        <td>功能键 F1 到 F9</td>
-                    </tr>
-                    <tr>
-                        <td><span class="key-badge">CapsLock</span> + <span class="key-badge">0</span></td>
-                        <td>F10 键</td>
-                        <td>功能键 F10</td>
-                    </tr>
-                    <tr>
-                        <td><span class="key-badge">CapsLock</span> + <span class="key-badge">-</span></td>
-                        <td>F11 键</td>
-                        <td>功能键 F11</td>
-                    </tr>
-                    <tr>
-                        <td><span class="key-badge">CapsLock</span> + <span class="key-badge">=</span></td>
-                        <td>F12 键</td>
-                        <td>功能键 F12</td>
-                    </tr>
-                </tbody>
-            </table>
+    <section class="showcase" id="config" aria-labelledby="config-title">
+      <div class="container">
+        <div class="section-head">
+          <div>
+            <p class="kicker">可视化配置中心</p>
+            <h2 id="config-title">日志目录、模型目录和快捷映射集中管理</h2>
+          </div>
+          <p class="lead">配置保存在当前用户目录，适合日常使用、备份和迁移。模型目录支持选择外层 <code>models</code>、<code>SenseVoice-Small</code> 或最终模型目录。</p>
         </div>
+        <div class="shot-grid">
+          <figure class="shot stack">
+            <img src="docs/images/config-page.png" alt="PowerCapslock 配置中心路径与存储页面" loading="lazy">
+            <figcaption class="shot-caption">路径与存储：日志目录和模型目录可直接浏览选择，模型保存时会立即检测并热加载。</figcaption>
+          </figure>
+          <div class="workflow" aria-label="配置流程">
+            <div class="step">
+              <strong>1. 打开托盘菜单</strong>
+              <span>右键 PowerCapslock 托盘图标，进入配置中心。</span>
+            </div>
+            <div class="step">
+              <strong>2. 选择目录</strong>
+              <span>日志目录和模型目录都支持浏览按钮选择。</span>
+            </div>
+            <div class="step">
+              <strong>3. 保存配置</strong>
+              <span>按键映射立即生效，模型路径立即校验。</span>
+            </div>
+            <div class="step">
+              <strong>4. 回到工作流</strong>
+              <span>无需重启即可继续使用快捷键和语音输入。</span>
+            </div>
+          </div>
+        </div>
+      </div>
     </section>
 
-    <section class="advantages" id="advantages">
-        <div class="container">
-            <h2 class="section-title">核心优势</h2>
-            <div class="advantage-item">
-                <div class="advantage-icon">🎙️</div>
-                <div class="advantage-content">
-                    <h4>本地语音识别</h4>
-                    <p>基于 sherpa-onnx 本地引擎，无需联网即可语音转文字。支持 SenseVoice 多语言模型，数据不上传云端，隐私绝对安全，响应速度快。</p>
-                </div>
+    <section class="voice" id="voice" aria-labelledby="voice-title">
+      <div class="container">
+        <div class="voice-layout">
+          <div>
+            <p class="kicker">本地离线语音输入</p>
+            <h2 id="voice-title">按住 CapsLock + A 说话，松开后自动输入文本</h2>
+            <p class="lead">语音模型来自 FunAudioLLM/SenseVoice，模型文件单独发布。下载模型包后，在配置中心选择模型目录并保存，加载成功后即可使用。</p>
+            <ul class="check-list">
+              <li>识别在本机完成，日常内容不上传云端。</li>
+              <li>模型目录缺少 <code>model.onnx</code> 或 <code>tokens.txt</code> 时会明确提示。</li>
+              <li>模型加载成功后会弹窗确认，无需重启程序。</li>
+            </ul>
+            <div class="actions">
+              <a class="button" href="https://github.com/IamJohnRain/PowerCapslock/releases/download/v0.2.0/PowerCapslock-v0.2.0-model-SenseVoice-Small.zip">下载 SenseVoice 模型包</a>
+              <a class="button secondary" href="https://github.com/FunAudioLLM/SenseVoice">查看 SenseVoice 项目</a>
             </div>
-            <div class="advantage-item">
-                <div class="advantage-icon">🎨</div>
-                <div class="advantage-content">
-                    <h4>Vim 风格设计</h4>
-                    <p>灵感来源于经典 Vim 编辑器的键位设计，为程序员和文本编辑用户提供熟悉的操作体验。</p>
-                </div>
-            </div>
-            <div class="advantage-item">
-                <div class="advantage-icon">⚡</div>
-                <div class="advantage-content">
-                    <h4>提升工作效率</h4>
-                    <p>无需频繁移动手到键盘边缘的方向键区域，减少手指移动距离，显著提升输入效率。</p>
-                </div>
-            </div>
-            <div class="advantage-item">
-                <div class="advantage-icon">🌐</div>
-                <div class="advantage-content">
-                    <h4>跨语言兼容</h4>
-                    <p>基于物理按键位置而非虚拟键码，完美支持中文、英文、日文等各种键盘布局。</p>
-                </div>
-            </div>
-            <div class="advantage-item">
-                <div class="advantage-icon">🎯</div>
-                <div class="advantage-content">
-                    <h4>精准映射</h4>
-                    <p>使用 Windows Low-level Keyboard Hook 技术，确保键位映射的准确性和实时性。</p>
-                </div>
-            </div>
-            <div class="advantage-item">
-                <div class="advantage-icon">🛡️</div>
-                <div class="advantage-content">
-                    <h4>系统安全</h4>
-                    <p>完全基于 Windows 官方 API 开发，不修改系统底层，安全可靠，可随时卸载。</p>
-                </div>
-            </div>
-            <div class="advantage-item">
-                <div class="advantage-icon">📦</div>
-                <div class="advantage-content">
-                    <h4>开箱即用</h4>
-                    <p>提供完整的安装脚本和预配置文件，下载后一键安装，无需复杂配置即可使用。</p>
-                </div>
-            </div>
+          </div>
+          <figure class="voice-panel">
+            <img src="docs/images/voice-prompt.png" alt="PowerCapslock 语音输入提示窗" loading="lazy">
+          </figure>
         </div>
+      </div>
     </section>
 
-    <section class="tech-stack" id="tech">
-        <div class="container">
-            <h2 class="section-title">技术栈</h2>
-            <div class="tech-items">
-                <div class="tech-item">C11</div>
-                <div class="tech-item">Windows API</div>
-                <div class="tech-item">CMake</div>
-                <div class="tech-item">Low-level Keyboard Hook</div>
-                <div class="tech-item">Scan Code</div>
-                <div class="tech-item">JSON 配置</div>
-                <div class="tech-item">sherpa-onnx</div>
-                <div class="tech-item">SenseVoice</div>
-                <div class="tech-item">WebView2</div>
-            </div>
+    <section class="mapping" id="mapping" aria-labelledby="mapping-title">
+      <div class="container">
+        <div class="section-head">
+          <div>
+            <p class="kicker">快捷映射</p>
+            <h2 id="mapping-title">默认 Vim 风格导航，也支持自定义映射</h2>
+          </div>
+          <p class="lead">映射列表包含触发键、输出键和中文动作说明。新增表单会校验按键名称，避免重复触发键。</p>
         </div>
+        <div class="mapping-grid">
+          <figure class="shot stack">
+            <img src="docs/images/mapping-page.png" alt="PowerCapslock 快捷映射列表" loading="lazy">
+            <figcaption class="shot-caption">快捷映射：选中一行后可编辑或删除，也可以恢复默认映射。</figcaption>
+          </figure>
+          <figure class="shot stack">
+            <img src="docs/images/mapping-form.png" alt="PowerCapslock 新增快捷映射表单" loading="lazy">
+            <figcaption class="shot-caption">新增映射：触发键填写原始按键，输出键填写目标按键。</figcaption>
+          </figure>
+        </div>
+        <div class="mapping-table-wrap" style="margin-top: 18px;">
+          <table>
+            <thead>
+              <tr>
+                <th>组合键</th>
+                <th>输出</th>
+                <th>常用场景</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="kbd">CapsLock</span> + <span class="kbd">H/J/K/L</span></td>
+                <td>方向键</td>
+                <td>在编辑器、浏览器和输入框中移动光标。</td>
+              </tr>
+              <tr>
+                <td><span class="kbd">CapsLock</span> + <span class="kbd">I/O</span></td>
+                <td>Home / End</td>
+                <td>快速跳到行首或行尾。</td>
+              </tr>
+              <tr>
+                <td><span class="kbd">CapsLock</span> + <span class="kbd">U/P</span></td>
+                <td>PageDown / PageUp</td>
+                <td>浏览长文档和列表。</td>
+              </tr>
+              <tr>
+                <td><span class="kbd">CapsLock</span> + <span class="kbd">1-0</span></td>
+                <td>F1-F10</td>
+                <td>访问编辑器、IDE 和系统快捷功能。</td>
+              </tr>
+              <tr>
+                <td><span class="kbd">CapsLock</span> + <span class="kbd">- / =</span></td>
+                <td>F11 / F12</td>
+                <td>全屏、开发者工具和更多功能键场景。</td>
+              </tr>
+              <tr>
+                <td><span class="kbd">CapsLock</span> + <span class="kbd">A</span></td>
+                <td>语音输入</td>
+                <td>按住开始听写，松开后输入识别结果。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </section>
 
-    <section class="installation" id="installation">
-        <div class="container">
-            <h2 class="section-title">安装指南</h2>
-            <div class="button-group" style="margin-bottom: 40px;">
-                <a href="https://github.com/IamJohnRain/PowerCapslock/releases" target="_blank" class="download-button">📥 下载最新版本</a>
-            </div>
-            <div class="install-steps">
-                <div class="install-step">
-                    <h4>步骤 1: 下载项目</h4>
-                    <p>点击上方按钮访问 GitHub Releases 页面，下载最新版本的压缩包</p>
-                    <p>或者从 GitHub 克隆项目仓库：</p>
-                    <code>git clone https://github.com/IamJohnRain/PowerCapslock.git</code>
-                </div>
-                <div class="install-step">
-                    <h4>步骤 2: 运行安装脚本</h4>
-                    <p>解压下载的文件，右键点击 <code>install.bat</code>，选择"以管理员身份运行"</p>
-                    <p>程序将自动完成编译、安装并添加到开机启动项</p>
-                </div>
-                <div class="install-step">
-                    <h4>步骤 3: 开始使用</h4>
-                    <p>安装完成后，程序会自动启动。按住 <span class="key-badge">CapsLock</span> + 映射键即可使用！</p>
-                </div>
-                <div class="install-step">
-                    <h4>步骤 4: 自定义配置（可选）</h4>
-                    <p>编辑配置文件 <code>%APPDATA%\PowerCapslock\config.json</code> 来自定义键位映射</p>
-                    <p>或使用内置的配置页面：右键托盘图标 → 打开配置页面，支持可视化编辑按键映射、设置语音模型等</p>
-                </div>
-                <div class="install-step">
-                    <h4>步骤 5: 语音输入配置（可选）</h4>
-                    <p><strong>5.1 下载语音模型</strong></p>
-                    <p>访问 <a href="https://github.com/k2-fsa/sherpa-onnx/releases" target="_blank">sherpa-onnx Releases</a></p>
-                    <p>下载模型文件：<code>sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2</code></p>
-                    <p>解压到任意目录（建议放在程序目录下的 models 文件夹）</p>
-                    <p><strong>5.2 配置语音输入</strong></p>
-                    <p>右键托盘图标 → 打开配置页面 → 语音设置</p>
-                    <p>填写模型路径，设置快捷键（默认 CapsLock + A）</p>
-                    <p>点击保存，即可使用语音输入功能</p>
-                </div>
-            </div>
+    <section class="download" id="download" aria-labelledby="download-title">
+      <div class="container">
+        <div class="section-head">
+          <div>
+            <p class="kicker">下载与使用</p>
+            <h2 id="download-title">主程序和模型分开下载，目录更清爽</h2>
+          </div>
+          <p class="lead">主程序包包含二进制产物、WebView2Loader 和运行时 DLL；模型包体积较大，单独下载后在配置中心选择模型目录。</p>
         </div>
+        <div class="download-grid">
+          <article class="step">
+            <strong>1. 下载主程序</strong>
+            <span>解压 <code>PowerCapslock-v0.2.0-windows-x64.zip</code>，运行 <code>powercapslock.exe</code>。</span>
+          </article>
+          <article class="step">
+            <strong>2. 打开配置中心</strong>
+            <span>右键托盘图标，选择“配置”，设置日志目录、模型目录和按键映射。</span>
+          </article>
+          <article class="step">
+            <strong>3. 启用语音输入</strong>
+            <span>下载模型包并选择目录，看到加载成功提示后即可使用 <code>CapsLock + A</code>。</span>
+          </article>
+        </div>
+        <div class="actions">
+          <a class="button" href="https://github.com/IamJohnRain/PowerCapslock/releases/download/v0.2.0/PowerCapslock-v0.2.0-windows-x64.zip">下载 v0.2.0 主程序</a>
+          <a class="button secondary" href="https://github.com/IamJohnRain/PowerCapslock">打开 GitHub 仓库</a>
+        </div>
+      </div>
     </section>
+  </main>
 
-    <footer>
-        <div class="container">
-            <div class="footer-links">
-                <a href="https://github.com/IamJohnRain/PowerCapslock" target="_blank">GitHub 仓库</a>
-                <a href="https://github.com/IamJohnRain/PowerCapslock/releases" target="_blank">下载版本</a>
-                <a href="https://github.com/IamJohnRain/PowerCapslock/issues" target="_blank">问题反馈</a>
-                <a href="https://github.com/IamJohnRain/PowerCapslock/blob/master/README.md" target="_blank">使用文档</a>
-            </div>
-            <p class="copyright">© 2024 PowerCapslock. MIT License. 灵感来源于 Vim 编辑器</p>
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-row">
+        <div>PowerCapslock · MIT License · 感谢 SenseVoice 与 sherpa-onnx 项目贡献者</div>
+        <div class="footer-links">
+          <a href="https://github.com/IamJohnRain/PowerCapslock">GitHub</a>
+          <a href="https://github.com/IamJohnRain/PowerCapslock/releases/tag/v0.2.0">Release</a>
+          <a href="https://github.com/IamJohnRain/PowerCapslock/issues">反馈问题</a>
+          <a href="https://github.com/IamJohnRain/PowerCapslock/blob/master/README.md">README</a>
         </div>
-    </footer>
+      </div>
+    </div>
+  </footer>
 </body>
 </html>
