@@ -134,6 +134,12 @@
       box-shadow: inset 0 3px 8px rgba(63, 123, 175, 0.18);
     }
 
+    .glass-button.small {
+      min-height: 32px;
+      padding: 0 12px;
+      font-size: 13px;
+    }
+
     .green {
       color: #064f3b;
       background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(36, 201, 145, 0.44));
@@ -188,7 +194,7 @@
       font-weight: 700;
     }
 
-    input {
+    input, select {
       width: 100%;
       height: 42px;
       padding: 0 14px;
@@ -198,11 +204,19 @@
       background: rgba(255, 255, 255, 0.82);
       outline: none;
       box-shadow: inset 0 1px 4px rgba(76, 128, 174, 0.1);
+      font-family: inherit;
+      font-size: 14px;
     }
 
-    input:focus {
+    input:focus, select:focus {
       border-color: rgba(49, 147, 255, 0.72);
       box-shadow: 0 0 0 4px rgba(49, 147, 255, 0.14);
+    }
+
+    input.capturing {
+      border-color: rgba(36, 201, 145, 0.72);
+      box-shadow: 0 0 0 4px rgba(36, 201, 145, 0.14), 0 0 12px rgba(36, 201, 145, 0.3);
+      background: rgba(220, 252, 241, 0.9);
     }
 
     .hint {
@@ -212,7 +226,7 @@
       line-height: 1.7;
     }
 
-    .mapping-layout {
+    .action-layout {
       height: calc(100% - 56px);
       display: grid;
       grid-template-columns: minmax(0, 1fr) 126px;
@@ -263,6 +277,29 @@
       background: rgba(131, 202, 255, 0.38);
     }
 
+    .type-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .type-key {
+      background: rgba(49, 147, 255, 0.15);
+      color: #075b9d;
+    }
+
+    .type-builtin {
+      background: rgba(36, 201, 145, 0.15);
+      color: #064f3b;
+    }
+
+    .type-command {
+      background: rgba(239, 106, 101, 0.15);
+      color: #7b2825;
+    }
+
     .actions {
       display: grid;
       align-content: start;
@@ -290,7 +327,7 @@
     }
 
     .modal {
-      width: min(420px, calc(100vw - 48px));
+      width: min(520px, calc(100vw - 48px));
       padding: 22px;
       border: 1px solid rgba(255, 255, 255, 0.74);
       border-radius: 8px;
@@ -306,6 +343,20 @@
     .modal-grid {
       display: grid;
       gap: 12px;
+    }
+
+    .modal-row {
+      display: grid;
+      grid-template-columns: 100px 1fr;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .modal-row-full {
+      display: grid;
+      grid-template-columns: 100px 1fr auto;
+      gap: 12px;
+      align-items: center;
     }
 
     .modal-actions {
@@ -332,6 +383,11 @@
     .toast.show {
       display: block;
     }
+
+    .toast.info {
+      color: #075b9d;
+      background: rgba(230, 245, 255, 0.9);
+    }
   </style>
 </head>
 <body>
@@ -339,14 +395,14 @@
     <section class="topbar">
       <div>
         <h1>设置中心</h1>
-        <div class="subtitle">管理日志、模型路径，以及 CapsLock 快捷映射。</div>
+        <div class="subtitle">管理日志、模型路径，以及 CapsLock 快捷动作配置。</div>
       </div>
       <div class="status-pill">配置会保存到当前用户</div>
     </section>
 
     <nav class="tabs">
       <button class="tab-button active" data-tab="paths">基础设置</button>
-      <button class="tab-button" data-tab="mappings">快捷映射</button>
+      <button class="tab-button" data-tab="actions">快捷动作</button>
     </nav>
 
     <section class="content">
@@ -366,26 +422,27 @@
         </div>
       </section>
 
-      <section id="mappings" class="page">
-        <h2 class="section-title">CapsLock 快捷映射</h2>
-        <div class="mapping-layout">
+      <section id="actions" class="page">
+        <h2 class="section-title">CapsLock 快捷动作</h2>
+        <div class="action-layout">
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
                   <th>触发键</th>
-                  <th>输出键</th>
-                  <th>动作说明</th>
+                  <th>类型</th>
+                  <th>参数</th>
+                  <th>说明</th>
                 </tr>
               </thead>
-              <tbody id="mappingRows"></tbody>
+              <tbody id="actionRows"></tbody>
             </table>
           </div>
           <div class="actions">
-            <button id="addMapping" class="glass-button green">新增映射</button>
-            <button id="editMapping" class="glass-button">编辑映射</button>
-            <button id="removeMapping" class="glass-button red">删除映射</button>
-            <button id="resetMappings" class="glass-button">恢复默认</button>
+            <button id="addAction" class="glass-button green">新增动作</button>
+            <button id="editAction" class="glass-button">编辑动作</button>
+            <button id="removeAction" class="glass-button red">删除动作</button>
+            <button id="resetActions" class="glass-button">恢复默认</button>
           </div>
         </div>
       </section>
@@ -397,18 +454,40 @@
     </footer>
   </main>
 
-  <section id="mappingModal" class="modal-backdrop">
+  <section id="actionModal" class="modal-backdrop">
     <div class="modal">
-      <h2 id="modalTitle">新增映射</h2>
+      <h2 id="modalTitle">新增动作</h2>
       <div class="modal-grid">
-        <label for="fromKey">触发键</label>
-        <input id="fromKey" placeholder="例如 Q、H、1" spellcheck="false">
-        <label for="toKey">输出键</label>
-        <input id="toKey" placeholder="例如 B、LEFT、F1" spellcheck="false">
+        <div class="modal-row-full">
+          <label for="triggerKey">触发键</label>
+          <input id="triggerKey" placeholder="按下按键或输入名称" spellcheck="false">
+          <button id="captureTrigger" class="glass-button small">捕获按键</button>
+        </div>
+        <div class="modal-row">
+          <label for="actionType">动作类型</label>
+          <select id="actionType">
+            <option value="0">按键映射</option>
+            <option value="1">内置功能</option>
+            <option value="2">执行命令</option>
+          </select>
+        </div>
+        <div class="modal-row-full" id="paramRowKey">
+          <label for="paramKey">目标按键</label>
+          <input id="paramKey" placeholder="按下按键或输入名称" spellcheck="false">
+          <button id="captureParamKey" class="glass-button small">捕获按键</button>
+        </div>
+        <div class="modal-row" id="paramRowBuiltin">
+          <label for="paramBuiltin">内置功能</label>
+          <select id="paramBuiltin"></select>
+        </div>
+        <div class="modal-row" id="paramRowCommand">
+          <label for="paramCommand">命令路径</label>
+          <input id="paramCommand" placeholder="例如: notepad.exe" spellcheck="false">
+        </div>
       </div>
-      <div class="hint" style="margin-top: 12px;">示例：Q -> B，H -> LEFT，1 -> F1</div>
+      <div class="hint" style="margin-top: 12px;" id="actionHint">按键映射：将 CapsLock + 触发键映射到另一个按键</div>
       <div class="modal-actions">
-        <button id="confirmMapping" class="glass-button green">保存</button>
+        <button id="confirmAction" class="glass-button green">保存</button>
         <button id="closeModal" class="glass-button">取消</button>
       </div>
     </div>
@@ -417,24 +496,45 @@
   <div id="toast" class="toast"></div>
 
   <script>
-    const defaultMappings = [
-      { from: "H", to: "LEFT" }, { from: "J", to: "DOWN" }, { from: "K", to: "UP" }, { from: "L", to: "RIGHT" },
-      { from: "I", to: "HOME" }, { from: "O", to: "END" }, { from: "U", to: "PAGEDOWN" }, { from: "P", to: "PAGEUP" },
-      { from: "1", to: "F1" }, { from: "2", to: "F2" }, { from: "3", to: "F3" }, { from: "4", to: "F4" },
-      { from: "5", to: "F5" }, { from: "6", to: "F6" }, { from: "7", to: "F7" }, { from: "8", to: "F8" },
-      { from: "9", to: "F9" }, { from: "0", to: "F10" }, { from: "MINUS", to: "F11" }, { from: "EQUAL", to: "F12" }
+    const defaultActions = [
+      { trigger: "H", type: 0, param: "LEFT" },
+      { trigger: "J", type: 0, param: "DOWN" },
+      { trigger: "K", type: 0, param: "UP" },
+      { trigger: "L", type: 0, param: "RIGHT" },
+      { trigger: "I", type: 0, param: "HOME" },
+      { trigger: "O", type: 0, param: "END" },
+      { trigger: "U", type: 0, param: "PAGEDOWN" },
+      { trigger: "P", type: 0, param: "PAGEUP" },
+      { trigger: "1", type: 0, param: "F1" },
+      { trigger: "2", type: 0, param: "F2" },
+      { trigger: "3", type: 0, param: "F3" },
+      { trigger: "4", type: 0, param: "F4" },
+      { trigger: "5", type: 0, param: "F5" },
+      { trigger: "6", type: 0, param: "F6" },
+      { trigger: "7", type: 0, param: "F7" },
+      { trigger: "8", type: 0, param: "F8" },
+      { trigger: "9", type: 0, param: "F9" },
+      { trigger: "0", type: 0, param: "F10" },
+      { trigger: "MINUS", type: 0, param: "F11" },
+      { trigger: "EQUAL", type: 0, param: "F12" }
     ];
     const validKeys = new Set([
       "A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z",
-      "0","1","2","3","4","5","6","7","8","9","MINUS","EQUAL","HOME","END","PAGEUP","PAGEDOWN","UP","DOWN","LEFT","RIGHT"
+      "0","1","2","3","4","5","6","7","8","9","MINUS","EQUAL","HOME","END","PAGEUP","PAGEDOWN","UP","DOWN","LEFT","RIGHT",
+      "F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12","SPACE","TAB","ENTER","BACKSPACE","DELETE","INSERT",
+      "ESCAPE","PRINTSCREEN","SCROLLLOCK","PAUSE","NUMLOCK","CAPITAL"
     ]);
     const displayNames = {
       LEFT: "← 左方向", RIGHT: "→ 右方向", UP: "↑ 上方向", DOWN: "↓ 下方向",
       HOME: "Home 行首", END: "End 行尾", PAGEUP: "PageUp 上翻页", PAGEDOWN: "PageDown 下翻页",
-      MINUS: "- 减号", EQUAL: "= 等号"
+      MINUS: "- 减号", EQUAL: "= 等号", SPACE: "空格", TAB: "Tab", ENTER: "Enter",
+      BACKSPACE: "Backspace", DELETE: "Delete", INSERT: "Insert", ESCAPE: "Escape",
+      PRINTSCREEN: "PrintScreen", SCROLLLOCK: "ScrollLock", PAUSE: "Pause",
+      NUMLOCK: "NumLock", CAPITAL: "CapsLock"
     };
+    const actionTypeNames = ["按键映射", "内置功能", "执行命令"];
 
-    const state = { logPath: "", modelPath: "", mappings: [], selected: -1, editing: -1 };
+    const state = { logPath: "", modelPath: "", actions: [], builtins: [], selected: -1, editing: -1 };
 
     function hostSend(type, payload = {}) {
       const message = JSON.stringify({ type, ...payload });
@@ -443,9 +543,10 @@
       }
     }
 
-    function showToast(text) {
+    function showToast(text, isInfo = false) {
       const toast = document.getElementById("toast");
       toast.textContent = text;
+      toast.classList.toggle("info", isInfo);
       toast.classList.add("show");
       clearTimeout(showToast.timer);
       showToast.timer = setTimeout(() => toast.classList.remove("show"), 2600);
@@ -455,28 +556,72 @@
       return displayNames[key] || key;
     }
 
-    function describe(item) {
-      return `CapsLock + ${keyLabel(item.from)}  发送  ${keyLabel(item.to)}`;
+    function typeBadge(type) {
+      const names = ["key", "builtin", "command"];
+      return `<span class="type-badge type-${names[type]}">${actionTypeNames[type]}</span>`;
+    }
+
+    function describeAction(item) {
+      if (item.type === 0) {
+        return `CapsLock + ${keyLabel(item.trigger)} → ${keyLabel(item.param)}`;
+      } else if (item.type === 1) {
+        const builtin = state.builtins.find(b => b.name === item.param);
+        const displayName = builtin ? builtin.displayName : item.param;
+        return `CapsLock + ${keyLabel(item.trigger)} → ${displayName}`;
+      } else {
+        return `CapsLock + ${keyLabel(item.trigger)} → 执行: ${item.param}`;
+      }
     }
 
     function normalizeKey(value) {
       return value.trim().toUpperCase();
     }
 
-    function renderMappings() {
-      const body = document.getElementById("mappingRows");
+    function renderActions() {
+      const body = document.getElementById("actionRows");
       body.innerHTML = "";
-      state.mappings.forEach((item, index) => {
+      state.actions.forEach((item, index) => {
         const row = document.createElement("tr");
         row.className = index === state.selected ? "selected" : "";
-        row.innerHTML = `<td>${item.from}</td><td>${item.to}</td><td>${describe(item)}</td>`;
+        let paramDisplay = item.param;
+        if (item.type === 0) {
+          paramDisplay = keyLabel(item.param);
+        } else if (item.type === 1) {
+          const builtin = state.builtins.find(b => b.name === item.param);
+          paramDisplay = builtin ? builtin.displayName : item.param;
+        }
+        row.innerHTML = `<td>${keyLabel(item.trigger)}</td><td>${typeBadge(item.type)}</td><td>${paramDisplay}</td><td>${describeAction(item)}</td>`;
         row.addEventListener("click", () => {
           state.selected = index;
-          renderMappings();
+          renderActions();
         });
-        row.addEventListener("dblclick", () => openMappingModal(index));
+        row.addEventListener("dblclick", () => openActionModal(index));
         body.appendChild(row);
       });
+    }
+
+    function renderBuiltins() {
+      const select = document.getElementById("paramBuiltin");
+      select.innerHTML = "";
+      state.builtins.forEach(builtin => {
+        const option = document.createElement("option");
+        option.value = builtin.name;
+        option.textContent = builtin.displayName;
+        select.appendChild(option);
+      });
+    }
+
+    function updateParamVisibility() {
+      const type = parseInt(document.getElementById("actionType").value, 10);
+      document.getElementById("paramRowKey").style.display = type === 0 ? "grid" : "none";
+      document.getElementById("paramRowBuiltin").style.display = type === 1 ? "grid" : "none";
+      document.getElementById("paramRowCommand").style.display = type === 2 ? "grid" : "none";
+      const hints = [
+        "按键映射：将 CapsLock + 触发键映射到另一个按键",
+        "内置功能：执行预定义的内置功能（如语音输入、截图等）",
+        "执行命令：运行指定的程序或命令"
+      ];
+      document.getElementById("actionHint").textContent = hints[type];
     }
 
     function setTab(name) {
@@ -488,51 +633,107 @@
       });
     }
 
-    function openMappingModal(index) {
+    function startCapture(captureType) {
+      hostSend("start_capture", { captureType });
+      const inputId = captureType === "trigger" ? "triggerKey" : "paramKey";
+      document.getElementById(inputId).classList.add("capturing");
+      document.getElementById(inputId).placeholder = "请按下要捕获的按键...";
+      showToast("请按下按键...", true);
+    }
+
+    function stopCapture() {
+      hostSend("stop_capture");
+      document.getElementById("triggerKey").classList.remove("capturing");
+      document.getElementById("paramKey").classList.remove("capturing");
+      document.getElementById("triggerKey").placeholder = "按下按键或输入名称";
+      document.getElementById("paramKey").placeholder = "按下按键或输入名称";
+    }
+
+    function openActionModal(index) {
       state.editing = index;
-      document.getElementById("modalTitle").textContent = index >= 0 ? "编辑映射" : "新增映射";
-      document.getElementById("fromKey").value = index >= 0 ? state.mappings[index].from : "";
-      document.getElementById("toKey").value = index >= 0 ? state.mappings[index].to : "";
-      document.getElementById("mappingModal").classList.add("open");
-      setTimeout(() => document.getElementById("fromKey").focus(), 0);
+      document.getElementById("modalTitle").textContent = index >= 0 ? "编辑动作" : "新增动作";
+      if (index >= 0) {
+        const action = state.actions[index];
+        document.getElementById("triggerKey").value = action.trigger;
+        document.getElementById("actionType").value = action.type.toString();
+        document.getElementById("paramKey").value = action.type === 0 ? action.param : "";
+        document.getElementById("paramBuiltin").value = action.type === 1 ? action.param : (state.builtins[0]?.name || "");
+        document.getElementById("paramCommand").value = action.type === 2 ? action.param : "";
+      } else {
+        document.getElementById("triggerKey").value = "";
+        document.getElementById("actionType").value = "0";
+        document.getElementById("paramKey").value = "";
+        document.getElementById("paramBuiltin").value = state.builtins[0]?.name || "";
+        document.getElementById("paramCommand").value = "";
+      }
+      updateParamVisibility();
+      document.getElementById("actionModal").classList.add("open");
+      setTimeout(() => document.getElementById("triggerKey").focus(), 0);
     }
 
-    function closeMappingModal() {
-      document.getElementById("mappingModal").classList.remove("open");
+    function closeActionModal() {
+      document.getElementById("actionModal").classList.remove("open");
       state.editing = -1;
+      stopCapture();
     }
 
-    function saveMappingFromModal() {
-      const from = normalizeKey(document.getElementById("fromKey").value);
-      const to = normalizeKey(document.getElementById("toKey").value);
-      if (!validKeys.has(from) || !validKeys.has(to)) {
-        showToast("按键名称无效，请使用 H、LEFT、F1 等支持的名称。");
+    function saveActionFromModal() {
+      const trigger = normalizeKey(document.getElementById("triggerKey").value);
+      const type = parseInt(document.getElementById("actionType").value, 10);
+      let param;
+      if (type === 0) {
+        param = normalizeKey(document.getElementById("paramKey").value);
+      } else if (type === 1) {
+        param = document.getElementById("paramBuiltin").value;
+      } else {
+        param = document.getElementById("paramCommand").value.trim();
+      }
+
+      // Validate
+      if (!validKeys.has(trigger)) {
+        showToast("触发键名称无效，请使用 H、LEFT、F1 等支持的名称。");
         return;
       }
-      const duplicate = state.mappings.some((item, index) => item.from === from && index !== state.editing);
+      if (type === 0 && !validKeys.has(param)) {
+        showToast("目标按键名称无效，请使用 H、LEFT、F1 等支持的名称。");
+        return;
+      }
+      if (type === 1 && !param) {
+        showToast("请选择一个内置功能。");
+        return;
+      }
+      if (type === 2 && !param) {
+        showToast("请输入要执行的命令路径。");
+        return;
+      }
+
+      const duplicate = state.actions.some((item, index) => item.trigger === trigger && index !== state.editing);
       if (duplicate) {
-        showToast("这个触发键已经存在映射，请换一个键。");
+        showToast("这个触发键已经存在配置，请换一个键。");
         return;
       }
-      const item = { from, to };
+
+      const item = { trigger, type, param };
       if (state.editing >= 0) {
-        state.mappings[state.editing] = item;
+        state.actions[state.editing] = item;
         state.selected = state.editing;
       } else {
-        state.mappings.push(item);
-        state.selected = state.mappings.length - 1;
+        state.actions.push(item);
+        state.selected = state.actions.length - 1;
       }
-      closeMappingModal();
-      renderMappings();
+      closeActionModal();
+      renderActions();
     }
 
     function applyInit(data) {
       state.logPath = data.logPath || "";
       state.modelPath = data.modelPath || "";
-      state.mappings = Array.isArray(data.mappings) ? data.mappings : defaultMappings.slice();
+      state.actions = Array.isArray(data.actions) ? data.actions : defaultActions.slice();
+      state.builtins = Array.isArray(data.builtins) ? data.builtins : [];
       document.getElementById("logPath").value = state.logPath;
       document.getElementById("modelPath").value = state.modelPath;
-      renderMappings();
+      renderBuiltins();
+      renderActions();
     }
 
     document.querySelectorAll(".tab-button").forEach(button => {
@@ -540,40 +741,47 @@
     });
     document.getElementById("browseLog").addEventListener("click", () => hostSend("browse", { target: "log" }));
     document.getElementById("browseModel").addEventListener("click", () => hostSend("browse", { target: "model" }));
-    document.getElementById("addMapping").addEventListener("click", () => openMappingModal(-1));
-    document.getElementById("editMapping").addEventListener("click", () => {
-      if (state.selected < 0) { showToast("请先选择一条映射。"); return; }
-      openMappingModal(state.selected);
+    document.getElementById("addAction").addEventListener("click", () => openActionModal(-1));
+    document.getElementById("editAction").addEventListener("click", () => {
+      if (state.selected < 0) { showToast("请先选择一个动作。"); return; }
+      openActionModal(state.selected);
     });
-    document.getElementById("removeMapping").addEventListener("click", () => {
-      if (state.selected < 0) { showToast("请先选择一条映射。"); return; }
-      if (state.mappings.length <= 1) { showToast("至少需要保留一条映射。"); return; }
-      state.mappings.splice(state.selected, 1);
-      state.selected = Math.min(state.selected, state.mappings.length - 1);
-      renderMappings();
+    document.getElementById("removeAction").addEventListener("click", () => {
+      if (state.selected < 0) { showToast("请先选择一个动作。"); return; }
+      if (state.actions.length <= 1) { showToast("至少需要保留一个动作配置。"); return; }
+      state.actions.splice(state.selected, 1);
+      state.selected = Math.min(state.selected, state.actions.length - 1);
+      renderActions();
     });
-    document.getElementById("resetMappings").addEventListener("click", () => {
-      state.mappings = defaultMappings.slice();
+    document.getElementById("resetActions").addEventListener("click", () => {
+      state.actions = defaultActions.slice();
       state.selected = -1;
-      renderMappings();
+      renderActions();
     });
     document.getElementById("save").addEventListener("click", () => {
       hostSend("save", {
         logPath: document.getElementById("logPath").value,
         modelPath: document.getElementById("modelPath").value,
-        mappings: state.mappings
+        actions: state.actions
       });
     });
     document.getElementById("cancel").addEventListener("click", () => hostSend("cancel"));
-    document.getElementById("confirmMapping").addEventListener("click", saveMappingFromModal);
-    document.getElementById("closeModal").addEventListener("click", closeMappingModal);
-    document.getElementById("mappingModal").addEventListener("click", event => {
-      if (event.target.id === "mappingModal") closeMappingModal();
+    document.getElementById("confirmAction").addEventListener("click", saveActionFromModal);
+    document.getElementById("closeModal").addEventListener("click", closeActionModal);
+    document.getElementById("actionModal").addEventListener("click", event => {
+      if (event.target.id === "actionModal") closeActionModal();
     });
+    document.getElementById("actionType").addEventListener("change", updateParamVisibility);
+    document.getElementById("captureTrigger").addEventListener("click", () => startCapture("trigger"));
+    document.getElementById("captureParamKey").addEventListener("click", () => startCapture("output"));
+
     window.addEventListener("keydown", event => {
       if (event.key === "Escape") {
-        if (document.getElementById("mappingModal").classList.contains("open")) closeMappingModal();
-        else hostSend("cancel");
+        if (document.getElementById("actionModal").classList.contains("open")) {
+          closeActionModal();
+        } else {
+          hostSend("cancel");
+        }
       }
     });
 
@@ -585,10 +793,31 @@
           document.getElementById(data.target === "log" ? "logPath" : "modelPath").value = data.path || "";
         }
         if (data.type === "error") showToast(data.message || "操作失败。");
+        if (data.type === "key_captured") {
+          const keyName = data.keyName.toUpperCase();
+          const triggerInput = document.getElementById("triggerKey");
+          const paramInput = document.getElementById("paramKey");
+          if (triggerInput.classList.contains("capturing")) {
+            triggerInput.value = keyName;
+            triggerInput.classList.remove("capturing");
+            triggerInput.placeholder = "按下按键或输入名称";
+          } else if (paramInput.classList.contains("capturing")) {
+            paramInput.value = keyName;
+            paramInput.classList.remove("capturing");
+            paramInput.placeholder = "按下按键或输入名称";
+          }
+          showToast(`已捕获按键: ${keyLabel(keyName)}`, true);
+        }
       });
       hostSend("ready");
     } else {
-      applyInit({ logPath: "C:\\\\Users\\\\User\\\\.PowerCapslock\\\\logs", modelPath: "models", mappings: defaultMappings });
+      // Demo mode for browser testing
+      state.builtins = [
+        { name: "voice_input", displayName: "语音输入" },
+        { name: "screenshot", displayName: "截图" },
+        { name: "toggle_enabled", displayName: "启用/禁用切换" }
+      ];
+      applyInit({ logPath: "C:\\Users\\User\\.PowerCapslock\\logs", modelPath: "models", actions: defaultActions, builtins: state.builtins });
     }
   </script>
 </body>
