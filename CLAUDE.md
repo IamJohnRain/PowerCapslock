@@ -113,3 +113,61 @@ PowerCapslock.exe --console
 - [src/main.c](src/main.c) - Entry point and module initialization
 - [src/hook.c](src/hook.c) - Core keyboard interception logic
 - [DESIGN.md](DESIGN.md) - Detailed technical design document (in Chinese)
+
+## Release Packaging Requirements
+
+### Critical: Must Include Resources Directory
+
+**When creating release packages, always ensure the following file is included:**
+
+```
+resources/config_ui.html
+```
+
+This file is required for the configuration dialog to work properly. Without it, users cannot:
+- Edit key mappings
+- Configure built-in functions (like screenshot)
+- Manage custom actions
+
+### Required Files for Release Zip
+
+A complete release package must include:
+
+```
+PowerCapslock-vX.Y.Z.zip/
+├── powercapslock.exe
+├── onnxruntime.dll
+├── onnxruntime_providers_shared.dll
+├── sherpa-onnx-c-api.dll
+├── sherpa-onnx-cxx-api.dll
+├── WebView2Loader.dll
+├── README.txt
+├── RELEASE_NOTES.md
+└── resources/
+    └── config_ui.html  ← NEVER FORGET THIS!
+```
+
+### Verification Checklist Before Release
+
+- [ ] `resources/config_ui.html` exists in the build output directory
+- [ ] Zip package includes `resources/config_ui.html`
+- [ ] All required DLLs are included
+- [ ] README.txt and RELEASE_NOTES.md are up to date
+- [ ] Run `--test-config` to verify config dialog works
+- [ ] Run all screenshot tests to verify functionality
+
+### CMake Post-Build Configuration
+
+The CMakeLists.txt is already configured to copy `resources/config_ui.html` to the build directory automatically:
+
+```cmake
+add_custom_command(TARGET powercapslock POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:powercapslock>/resources
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_SOURCE_DIR}/resources/config_ui.html
+        $<TARGET_FILE_DIR:powercapslock>/resources/config_ui.html
+    # ... other DLL copies
+)
+```
+
+Always build first, then package from the build output directory.
