@@ -46,5 +46,6 @@ scripts/uninstall.bat
 test/*
 !test/config_function_test.py
 !test/README_CONFIG_FUNCTION_TEST.md
+!test/screenshot_function_test.py
 test/output/
 test/test_run_*/

@@ -12,6 +12,8 @@
 #include "screenshot_overlay.h"
 #include "screenshot_toolbar.h"
 #include "screenshot_float.h"
+#include "screenshot_annotate.h"
+#include "screenshot_ocr.h"
 #include <windows.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -616,7 +618,9 @@ typedef enum {
     CMD_MODE_TEST_SCREENSHOT_ALL = 14,
     CMD_MODE_TEST_SCREENSHOT_OVERLAY = 15,
     CMD_MODE_TEST_SCREENSHOT_TOOLBAR = 16,
-    CMD_MODE_TEST_SCREENSHOT_FLOAT = 17
+    CMD_MODE_TEST_SCREENSHOT_FLOAT = 17,
+    CMD_MODE_TEST_SCREENSHOT_ANNOTATE = 18,
+    CMD_MODE_TEST_SCREENSHOT_OCR = 19
 } CommandMode;
 
 // 保存音频文件测试参数
@@ -1169,6 +1173,42 @@ static int RunScreenshotFloatTest(void) {
     return result;
 }
 
+static int RunScreenshotAnnotateTest(void) {
+    g_hInstance = GetModuleHandle(NULL);
+
+    ConfigInit();
+    LoggerInit(ConfigGetLogPath());
+    LoggerSetLevel(LOG_LEVEL_DEBUG);
+
+    printf("========== PowerCapslock Screenshot Annotate Test ==========\n");
+    fflush(stdout);
+
+    int result = AnnotateTest();
+
+    LoggerCleanup();
+    ConfigCleanup();
+
+    return result;
+}
+
+static int RunScreenshotOCRTest(void) {
+    g_hInstance = GetModuleHandle(NULL);
+
+    ConfigInit();
+    LoggerInit(ConfigGetLogPath());
+    LoggerSetLevel(LOG_LEVEL_DEBUG);
+
+    printf("========== PowerCapslock Screenshot OCR Test ==========\n");
+    fflush(stdout);
+
+    int result = OCRTest();
+
+    LoggerCleanup();
+    ConfigCleanup();
+
+    return result;
+}
+
 static CommandMode ParseCommandLine(LPSTR lpCmdLine, char** outputPath) {
     char* args = lpCmdLine;
     CommandMode mode = CMD_MODE_NORMAL;
@@ -1391,6 +1431,16 @@ static CommandMode ParseCommandLine(LPSTR lpCmdLine, char** outputPath) {
             mode = CMD_MODE_TEST_SCREENSHOT_FLOAT;
             args += strlen("--test-screenshot-float");
         }
+        else if (strncmp(args, "--test-screenshot-annotate", strlen("--test-screenshot-annotate")) == 0 &&
+                (args[strlen("--test-screenshot-annotate")] == ' ' || args[strlen("--test-screenshot-annotate")] == '\0')) {
+            mode = CMD_MODE_TEST_SCREENSHOT_ANNOTATE;
+            args += strlen("--test-screenshot-annotate");
+        }
+        else if (strncmp(args, "--test-screenshot-ocr", strlen("--test-screenshot-ocr")) == 0 &&
+                (args[strlen("--test-screenshot-ocr")] == ' ' || args[strlen("--test-screenshot-ocr")] == '\0')) {
+            mode = CMD_MODE_TEST_SCREENSHOT_OCR;
+            args += strlen("--test-screenshot-ocr");
+        }
         // Unknown argument, skip
         else {
             while (*args != ' ' && *args != '\t' && *args != '\0') args++;
@@ -1495,6 +1545,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             ReleaseMutex(hMutex);
             CloseHandle(hMutex);
             return RunScreenshotFloatTest();
+        case CMD_MODE_TEST_SCREENSHOT_ANNOTATE:
+            ReleaseMutex(hMutex);
+            CloseHandle(hMutex);
+            return RunScreenshotAnnotateTest();
+        case CMD_MODE_TEST_SCREENSHOT_OCR:
+            ReleaseMutex(hMutex);
+            CloseHandle(hMutex);
+            return RunScreenshotOCRTest();
         case CMD_MODE_NORMAL:
         default:
             break;

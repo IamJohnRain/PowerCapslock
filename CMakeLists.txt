@@ -27,6 +27,8 @@ set(SOURCES
     src/screenshot_overlay.c
     src/screenshot_toolbar.c
     src/screenshot_float.c
+    src/screenshot_annotate.c
+    src/screenshot_ocr.c
     resources/resource.rc
 )
 
@@ -46,6 +48,8 @@ set(HEADERS
     src/screenshot_overlay.h
     src/screenshot_toolbar.h
     src/screenshot_float.h
+    src/screenshot_annotate.h
+    src/screenshot_ocr.h
 )
 
 # 可执行文件
