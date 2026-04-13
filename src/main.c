@@ -8,6 +8,10 @@
 #include "audio.h"
 #include "voice_prompt.h"
 #include "config_dialog.h"
+#include "screenshot.h"
+#include "screenshot_overlay.h"
+#include "screenshot_toolbar.h"
+#include "screenshot_float.h"
 #include <windows.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -605,12 +609,26 @@ typedef enum {
     CMD_MODE_TEST_KEY_MAPPING = 7,
     CMD_MODE_TEST_VOICE_PROMPT = 8,
     CMD_MODE_TEST_TOAST = 9,
-    CMD_MODE_TEST_MODEL_LOAD = 10
+    CMD_MODE_TEST_MODEL_LOAD = 10,
+    CMD_MODE_TEST_SCREENSHOT_CAPTURE = 11,
+    CMD_MODE_TEST_SCREENSHOT_SAVE = 12,
+    CMD_MODE_TEST_SCREENSHOT_CLIPBOARD = 13,
+    CMD_MODE_TEST_SCREENSHOT_ALL = 14,
+    CMD_MODE_TEST_SCREENSHOT_OVERLAY = 15,
+    CMD_MODE_TEST_SCREENSHOT_TOOLBAR = 16,
+    CMD_MODE_TEST_SCREENSHOT_FLOAT = 17
 } CommandMode;
 
 // 保存音频文件测试参数
 static char* g_testAudioPath = NULL;
 static char* g_testExpectedPath = NULL;
+
+// 截图测试参数
+static int g_screenshotX = 0;
+static int g_screenshotY = 0;
+static int g_screenshotW = 200;
+static int g_screenshotH = 200;
+static char* g_screenshotOutputPath = NULL;
 
 // MP3 文件测试：识别 MP3 文件并与预期文本比较
 static int RunAudioFileTest(void) {
@@ -1021,6 +1039,136 @@ static int RunKeyMappingTestMode(void) {
     return passed ? 0 : 1;
 }
 
+// 截图测试函数
+static int RunScreenshotCaptureTest(void) {
+    g_hInstance = GetModuleHandle(NULL);
+
+    ConfigInit();
+    LoggerInit(ConfigGetLogPath());
+    LoggerSetLevel(LOG_LEVEL_DEBUG);
+
+    printf("========== PowerCapslock Screenshot Capture Test ==========\n");
+    printf("Region: (%d, %d) %dx%d\n", g_screenshotX, g_screenshotY, g_screenshotW, g_screenshotH);
+    printf("Output: %s\n", g_screenshotOutputPath ? g_screenshotOutputPath : "<none>");
+    fflush(stdout);
+
+    int result = ScreenshotTestCapture(g_screenshotX, g_screenshotY, g_screenshotW, g_screenshotH, g_screenshotOutputPath);
+
+    LoggerCleanup();
+    ConfigCleanup();
+
+    return result;
+}
+
+static int RunScreenshotSaveTest(void) {
+    g_hInstance = GetModuleHandle(NULL);
+
+    ConfigInit();
+    LoggerInit(ConfigGetLogPath());
+    LoggerSetLevel(LOG_LEVEL_DEBUG);
+
+    printf("========== PowerCapslock Screenshot Save Test ==========\n");
+    printf("Output: %s\n", g_screenshotOutputPath ? g_screenshotOutputPath : "test_save.png");
+    fflush(stdout);
+
+    int result = ScreenshotTestSave(g_screenshotOutputPath ? g_screenshotOutputPath : "test_save.png");
+
+    LoggerCleanup();
+    ConfigCleanup();
+
+    return result;
+}
+
+static int RunScreenshotClipboardTest(void) {
+    g_hInstance = GetModuleHandle(NULL);
+
+    ConfigInit();
+    LoggerInit(ConfigGetLogPath());
+    LoggerSetLevel(LOG_LEVEL_DEBUG);
+
+    printf("========== PowerCapslock Screenshot Clipboard Test ==========\n");
+    fflush(stdout);
+
+    int result = ScreenshotTestClipboard();
+
+    LoggerCleanup();
+    ConfigCleanup();
+
+    return result;
+}
+
+static int RunScreenshotAllTests(void) {
+    g_hInstance = GetModuleHandle(NULL);
+
+    ConfigInit();
+    LoggerInit(ConfigGetLogPath());
+    LoggerSetLevel(LOG_LEVEL_DEBUG);
+
+    printf("========== PowerCapslock Screenshot All Tests ==========\n");
+    fflush(stdout);
+
+    int result = ScreenshotTestAll();
+
+    LoggerCleanup();
+    ConfigCleanup();
+
+    return result;
+}
+
+static int RunScreenshotOverlayTest(void) {
+    g_hInstance = GetModuleHandle(NULL);
+
+    ConfigInit();
+    LoggerInit(ConfigGetLogPath());
+    LoggerSetLevel(LOG_LEVEL_DEBUG);
+
+    printf("========== PowerCapslock Screenshot Overlay Test ==========\n");
+    fflush(stdout);
+
+    int result = ScreenshotOverlayTest();
+
+    LoggerCleanup();
+    ConfigCleanup();
+
+    return result;
+}
+
+static int RunScreenshotToolbarTest(void) {
+    g_hInstance = GetModuleHandle(NULL);
+
+    ConfigInit();
+    LoggerInit(ConfigGetLogPath());
+    LoggerSetLevel(LOG_LEVEL_DEBUG);
+
+    printf("========== PowerCapslock Screenshot Toolbar Test ==========\n");
+    fflush(stdout);
+
+    int result = ScreenshotToolbarTest();
+
+    LoggerCleanup();
+    ConfigCleanup();
+
+    return result;
+}
+
+static int RunScreenshotFloatTest(void) {
+    g_hInstance = GetModuleHandle(NULL);
+
+    ConfigInit();
+    LoggerInit(ConfigGetLogPath());
+    LoggerSetLevel(LOG_LEVEL_DEBUG);
+
+    printf("========== PowerCapslock Screenshot Float Test ==========\n");
+    fflush(stdout);
+
+    int result = ScreenshotFloatTest();
+
+    LoggerCleanup();
+    ConfigCleanup();
+
+    return result;
+}
+
 static CommandMode ParseCommandLine(LPSTR lpCmdLine, char** outputPath) {
     char* args = lpCmdLine;
     CommandMode mode = CMD_MODE_NORMAL;
@@ -1178,6 +1326,71 @@ static CommandMode ParseCommandLine(LPSTR lpCmdLine, char** outputPath) {
             g_cmdEnableVoice = 1;
             args += strlen("--enable-voice");
         }
+        else if (strncmp(args, "--test-screenshot-capture", strlen("--test-screenshot-capture")) == 0 &&
+                (args[strlen("--test-screenshot-capture")] == ' ' || args[strlen("--test-screenshot-capture")] == '\0')) {
+            mode = CMD_MODE_TEST_SCREENSHOT_CAPTURE;
+            args += strlen("--test-screenshot-capture");
+            while (*args == ' ' || *args == '\t') args++;
+
+            // Parse arguments: x y w h [output.png]
+            if (*args != '\0') {
+                g_screenshotX = atoi(args);
+                while (*args != ' ' && *args != '\t' && *args != '\0') args++;
+                while (*args == ' ' || *args == '\t') args++;
+            }
+            if (*args != '\0') {
+                g_screenshotY = atoi(args);
+                while (*args != ' ' && *args != '\t' && *args != '\0') args++;
+                while (*args == ' ' || *args == '\t') args++;
+            }
+            if (*args != '\0') {
+                g_screenshotW = atoi(args);
+                while (*args != ' ' && *args != '\t' && *args != '\0') args++;
+                while (*args == ' ' || *args == '\t') args++;
+            }
+            if (*args != '\0') {
+                g_screenshotH = atoi(args);
+                while (*args != ' ' && *args != '\t' && *args != '\0') args++;
+                while (*args == ' ' || *args == '\t') args++;
+            }
+            if (*args != '\0') {
+                g_screenshotOutputPath = args;
+            }
+        }
+        else if (strncmp(args, "--test-screenshot-save", strlen("--test-screenshot-save")) == 0 &&
+                (args[strlen("--test-screenshot-save")] == ' ' || args[strlen("--test-screenshot-save")] == '\0')) {
+            mode = CMD_MODE_TEST_SCREENSHOT_SAVE;
+            args += strlen("--test-screenshot-save");
+            while (*args == ' ' || *args == '\t') args++;
+            if (*args != '\0') {
+                g_screenshotOutputPath = args;
+            }
+        }
+        else if (strncmp(args, "--test-screenshot-clipboard", strlen("--test-screenshot-clipboard")) == 0 &&
+                (args[strlen("--test-screenshot-clipboard")] == ' ' || args[strlen("--test-screenshot-clipboard")] == '\0')) {
+            mode = CMD_MODE_TEST_SCREENSHOT_CLIPBOARD;
+            args += strlen("--test-screenshot-clipboard");
+        }
+        else if (strncmp(args, "--test-screenshot-all", strlen("--test-screenshot-all")) == 0 &&
+                (args[strlen("--test-screenshot-all")] == ' ' || args[strlen("--test-screenshot-all")] == '\0')) {
+            mode = CMD_MODE_TEST_SCREENSHOT_ALL;
+            args += strlen("--test-screenshot-all");
+        }
+        else if (strncmp(args, "--test-screenshot-overlay", strlen("--test-screenshot-overlay")) == 0 &&
+                (args[strlen("--test-screenshot-overlay")] == ' ' || args[strlen("--test-screenshot-overlay")] == '\0')) {
+            mode = CMD_MODE_TEST_SCREENSHOT_OVERLAY;
+            args += strlen("--test-screenshot-overlay");
+        }
+        else if (strncmp(args, "--test-screenshot-toolbar", strlen("--test-screenshot-toolbar")) == 0 &&
+                (args[strlen("--test-screenshot-toolbar")] == ' ' || args[strlen("--test-screenshot-toolbar")] == '\0')) {
+            mode = CMD_MODE_TEST_SCREENSHOT_TOOLBAR;
+            args += strlen("--test-screenshot-toolbar");
+        }
+        else if (strncmp(args, "--test-screenshot-float", strlen("--test-screenshot-float")) == 0 &&
+                (args[strlen("--test-screenshot-float")] == ' ' || args[strlen("--test-screenshot-float")] == '\0')) {
+            mode = CMD_MODE_TEST_SCREENSHOT_FLOAT;
+            args += strlen("--test-screenshot-float");
+        }
         // Unknown argument, skip
         else {
             while (*args != ' ' && *args != '\t' && *args != '\0') args++;
@@ -1254,6 +1467,34 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             ReleaseMutex(hMutex);
             CloseHandle(hMutex);
             return RunKeyMappingTestMode();
+        case CMD_MODE_TEST_SCREENSHOT_CAPTURE:
+            ReleaseMutex(hMutex);
+            CloseHandle(hMutex);
+            return RunScreenshotCaptureTest();
+        case CMD_MODE_TEST_SCREENSHOT_SAVE:
+            ReleaseMutex(hMutex);
+            CloseHandle(hMutex);
+            return RunScreenshotSaveTest();
+        case CMD_MODE_TEST_SCREENSHOT_CLIPBOARD:
+            ReleaseMutex(hMutex);
+            CloseHandle(hMutex);
+            return RunScreenshotClipboardTest();
+        case CMD_MODE_TEST_SCREENSHOT_ALL:
+            ReleaseMutex(hMutex);
+            CloseHandle(hMutex);
+            return RunScreenshotAllTests();
+        case CMD_MODE_TEST_SCREENSHOT_OVERLAY:
+            ReleaseMutex(hMutex);
+            CloseHandle(hMutex);
+            return RunScreenshotOverlayTest();
+        case CMD_MODE_TEST_SCREENSHOT_TOOLBAR:
+            ReleaseMutex(hMutex);
+            CloseHandle(hMutex);
+            return RunScreenshotToolbarTest();
+        case CMD_MODE_TEST_SCREENSHOT_FLOAT:
+            ReleaseMutex(hMutex);
+            CloseHandle(hMutex);
+            return RunScreenshotFloatTest();
         case CMD_MODE_NORMAL:
         default:
             break;

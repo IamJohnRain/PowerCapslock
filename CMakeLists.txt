@@ -23,6 +23,10 @@ set(SOURCES
     src/audio.c
     src/voice_prompt.c
     src/config_dialog_webview.cpp
+    src/screenshot.c
+    src/screenshot_overlay.c
+    src/screenshot_toolbar.c
+    src/screenshot_float.c
     resources/resource.rc
 )
 
@@ -38,6 +42,10 @@ set(HEADERS
     src/audio.h
     src/voice_prompt.h
     src/config_dialog.h
+    src/screenshot.h
+    src/screenshot_overlay.h
+    src/screenshot_toolbar.h
+    src/screenshot_float.h
 )
 
 # 可执行文件
@@ -57,6 +65,7 @@ target_link_libraries(powercapslock
     shell32
     comctl32
     gdi32
+    msimg32
     ole32
     uuid
     mmdevapi
