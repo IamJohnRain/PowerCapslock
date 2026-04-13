@@ -28,4 +28,23 @@ bool HookRunCapsLockATest(DWORD slowStartDelayMs, const char* outputPath);
 
 bool HookRunKeyMappingTest(WORD scanCode, UINT expectedVk, const char* outputPath);
 
+// 捕获模式类型
+typedef enum {
+    CAPTURE_MODE_NONE,
+    CAPTURE_MODE_TRIGGER,
+    CAPTURE_MODE_OUTPUT
+} CaptureMode;
+
+// 设置捕获模式
+void HookSetCaptureMode(CaptureMode mode);
+
+// 获取捕获的按键信息
+bool HookGetCapturedKey(char* keyName, int keyNameSize, WORD* scanCode);
+
+// 清除捕获的按键
+void HookClearCapturedKey(void);
+
+// 检查是否处于捕获模式
+bool HookIsCaptureMode(void);
+
 #endif // HOOK_H
