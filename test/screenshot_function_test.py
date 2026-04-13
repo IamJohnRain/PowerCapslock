@@ -192,6 +192,17 @@ class ScreenshotFunctionSuite:
         passed = result.returncode == 0
         self.add_result("OCR识别", passed, f"rc={result.returncode}")
 
+    def test_config(self) -> None:
+        """测试配置加载和截图动作"""
+        result = self.run_command(
+            ["--test-config"],
+            "config",
+        )
+        passed = result.returncode == 0
+        # 检查配置输出中包含 actions
+        has_actions = "actions" in (result.stdout or "").lower()
+        self.add_result("配置加载", passed, f"rc={result.returncode}, has_actions={has_actions}")
+
     def write_reports(self) -> None:
         passed_count = sum(1 for r in self.results if r.passed)
         result_data = {
@@ -233,6 +244,7 @@ class ScreenshotFunctionSuite:
             self.test_float()
             self.test_annotate()
             self.test_ocr()
+            self.test_config()
         finally:
             self.write_reports()
 
