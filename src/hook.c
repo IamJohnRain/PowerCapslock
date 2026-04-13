@@ -4,6 +4,8 @@
 #include "voice.h"
 #include "audio.h"
 #include "voice_prompt.h"
+#include "action.h"
+#include "config.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,6 +31,9 @@ typedef struct {
     DWORD testVoiceStartDelayMs;
     bool testAsyncStartHandled;
     bool testAsyncStopHandled;
+    CaptureMode captureMode;
+    char capturedKeyName[32];
+    WORD capturedScanCode;
 } HookState;
 
 static HookState g_hook = {0};
@@ -317,6 +322,129 @@ static void HandleVoiceStopAsync(void) {
     ResetVoiceSessionState();
 }
 
+// 扫描码到按键名称的转换（简化版，实际使用时可根据需要扩展）
+static const char* ScanCodeToKeyName(WORD scanCode) {
+    // 常见按键的扫描码映射
+    switch (scanCode) {
+        case 0x01: return "ESC";
+        case 0x02: return "1";
+        case 0x03: return "2";
+        case 0x04: return "3";
+        case 0x05: return "4";
+        case 0x06: return "5";
+        case 0x07: return "6";
+        case 0x08: return "7";
+        case 0x09: return "8";
+        case 0x0A: return "9";
+        case 0x0B: return "0";
+        case 0x0C: return "MINUS";
+        case 0x0D: return "EQUAL";
+        case 0x0E: return "BACKSPACE";
+        case 0x0F: return "TAB";
+        case 0x10: return "Q";
+        case 0x11: return "W";
+        case 0x12: return "E";
+        case 0x13: return "R";
+        case 0x14: return "T";
+        case 0x15: return "Y";
+        case 0x16: return "U";
+        case 0x17: return "I";
+        case 0x18: return "O";
+        case 0x19: return "P";
+        case 0x1A: return "LBRACKET";
+        case 0x1B: return "RBRACKET";
+        case 0x1C: return "ENTER";
+        case 0x1D: return "LCTRL";
+        case 0x1E: return "A";
+        case 0x1F: return "S";
+        case 0x20: return "D";
+        case 0x21: return "F";
+        case 0x22: return "G";
+        case 0x23: return "H";
+        case 0x24: return "J";
+        case 0x25: return "K";
+        case 0x26: return "L";
+        case 0x27: return "SEMICOLON";
+        case 0x28: return "APOSTROPHE";
+        case 0x29: return "GRAVE";
+        case 0x2A: return "LSHIFT";
+        case 0x2B: return "BACKSLASH";
+        case 0x2C: return "Z";
+        case 0x2D: return "X";
+        case 0x2E: return "C";
+        case 0x2F: return "V";
+        case 0x30: return "B";
+        case 0x31: return "N";
+        case 0x32: return "M";
+        case 0x33: return "COMMA";
+        case 0x34: return "PERIOD";
+        case 0x35: return "SLASH";
+        case 0x36: return "RSHIFT";
+        case 0x37: return "KP_MULTIPLY";
+        case 0x38: return "LALT";
+        case 0x39: return "SPACE";
+        case 0x3A: return "CAPSLOCK";
+        case 0x3B: return "F1";
+        case 0x3C: return "F2";
+        case 0x3D: return "F3";
+        case 0x3E: return "F4";
+        case 0x3F: return "F5";
+        case 0x40: return "F6";
+        case 0x41: return "F7";
+        case 0x42: return "F8";
+        case 0x43: return "F9";
+        case 0x44: return "F10";
+        case 0x57: return "F11";
+        case 0x58: return "F12";
+        case 0x47: return "HOME";
+        case 0x48: return "UP";
+        case 0x49: return "PAGEUP";
+        case 0x4B: return "LEFT";
+        case 0x4D: return "RIGHT";
+        case 0x4F: return "END";
+        case 0x50: return "DOWN";
+        case 0x51: return "PAGEDOWN";
+        case 0x52: return "INSERT";
+        case 0x53: return "DELETE";
+        case 0x46: return "SCROLLLOCK";
+        case 0x45: return "NUMLOCK";
+        case 0xE0: return "LWIN";
+        case 0xE1: return "RWIN";
+        default: return NULL;
+    }
+}
+
+// 捕获模式函数实现
+void HookSetCaptureMode(CaptureMode mode) {
+    g_hook.captureMode = mode;
+    g_hook.capturedKeyName[0] = '\0';
+    g_hook.capturedScanCode = 0;
+    LOG_DEBUG("Capture mode set to: %d", mode);
+}
+
+bool HookGetCapturedKey(char* keyName, int keyNameSize, WORD* scanCode) {
+    if (g_hook.capturedKeyName[0] == '\0') {
+        return false;
+    }
+    if (keyName != NULL && keyNameSize > 0) {
+        strncpy(keyName, g_hook.capturedKeyName, keyNameSize - 1);
+        keyName[keyNameSize - 1] = '\0';
+    }
+    if (scanCode != NULL) {
+        *scanCode = g_hook.capturedScanCode;
+    }
+    return true;
+}
+
+void HookClearCapturedKey(void) {
+    g_hook.capturedKeyName[0] = '\0';
+    g_hook.capturedScanCode = 0;
+}
+
+bool HookIsCaptureMode(void) {
+    return g_hook.captureMode != CAPTURE_MODE_NONE;
+}
+
 // 低级别键盘钩子回调函数
 static HookAction ProcessKeyEvent(const KBDLLHOOKSTRUCT* pKb, WPARAM wParam) {
     DWORD vkCode = pKb->vkCode;
@@ -325,6 +453,22 @@ static HookAction ProcessKeyEvent(const KBDLLHOOKSTRUCT* pKb, WPARAM wParam) {
     bool isKeyUp = (wParam == WM_KEYUP || wParam == WM_SYSKEYUP);
     bool isInjected = (pKb->flags & LLKHF_INJECTED) != 0;
     bool isAKey = (vkCode == 'A' || scanCode == 0x1E);
+
+    // 捕获模式优先处理
+    if (g_hook.captureMode != CAPTURE_MODE_NONE && isKeyDown) {
+        // 忽略 CapsLock 本身
+        if (vkCode != VK_CAPITAL) {
+            // 获取按键名称
+            const char* keyName = ScanCodeToKeyName(scanCode);
+            if (keyName != NULL) {
+                strncpy(g_hook.capturedKeyName, keyName, sizeof(g_hook.capturedKeyName) - 1);
+                g_hook.capturedKeyName[sizeof(g_hook.capturedKeyName) - 1] = '\0';
+                g_hook.capturedScanCode = scanCode;
+                LOG_DEBUG("Captured key: %s (scanCode=0x%02X)", keyName, scanCode);
+            }
+            return HOOK_ACTION_INTERCEPT; // 拦截按键
+        }
+    }
 
     if (vkCode == VK_CAPITAL) {
         if (isInjected) {
@@ -385,8 +529,8 @@ static HookAction ProcessKeyEvent(const KBDLLHOOKSTRUCT* pKb, WPARAM wParam) {
     }
 
     {
-        const KeyMapping* mapping = KeymapFindByScanCode(scanCode);
-        if (mapping == NULL) {
+        const Action* action = ActionFindByScanCode(scanCode);
+        if (action == NULL) {
             return HOOK_ACTION_PASS_THROUGH;
         }
 
@@ -395,18 +539,34 @@ static HookAction ProcessKeyEvent(const KBDLLHOOKSTRUCT* pKb, WPARAM wParam) {
             bool ctrl = false;
             bool alt = false;
             GetModifierState(&shift, &ctrl, &alt);
-            LOG_DEBUG("Mapping triggered: %s (scanCode=0x%02X -> VK=%d) [Shift=%d Ctrl=%d Alt=%d]",
-                      mapping->name, scanCode, mapping->targetVk, shift, ctrl, alt);
-            if (!g_hook.testMode) {
-                SendKeyInput(mapping->targetVk, true);
+            LOG_DEBUG("Action triggered: %s (scanCode=0x%02X -> type=%d) [Shift=%d Ctrl=%d Alt=%d]",
+                      action->trigger, scanCode, action->type, shift, ctrl, alt);
+
+            if (action->type == ACTION_TYPE_KEY_MAPPING) {
+                // 按键映射：发送目标键
+                UINT targetVk = ConfigKeyNameToVkCode(action->param);
+                if (targetVk != 0) {
+                    if (!g_hook.testMode) {
+                        SendKeyInput(targetVk, true);
+                    }
+                }
+            } else {
+                // 其他动作类型（内置功能、命令）
+                ActionExecute(action);
             }
             return HOOK_ACTION_INTERCEPT;
         }
 
         if (isKeyUp) {
-            if (!g_hook.testMode) {
-                SendKeyInput(mapping->targetVk, false);
+            if (action->type == ACTION_TYPE_KEY_MAPPING) {
+                UINT targetVk = ConfigKeyNameToVkCode(action->param);
+                if (targetVk != 0) {
+                    if (!g_hook.testMode) {
+                        SendKeyInput(targetVk, false);
+                    }
+                }
             }
+            // 其他动作类型在keyup时不需要额外处理
             return HOOK_ACTION_INTERCEPT;
         }
     }

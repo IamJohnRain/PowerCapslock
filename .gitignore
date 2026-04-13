@@ -49,3 +49,4 @@ test/*
 !test/screenshot_function_test.py
 test/output/
 test/test_run_*/
+.worktrees/

@@ -22,6 +22,8 @@ set(SOURCES
     src/voice.c
     src/audio.c
     src/voice_prompt.c
+    src/action.c
+    src/action_builtin.c
     src/config_dialog_webview.cpp
     src/screenshot.c
     src/screenshot_overlay.c

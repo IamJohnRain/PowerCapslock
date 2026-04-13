@@ -8,6 +8,8 @@
 #include "audio.h"
 #include "voice_prompt.h"
 #include "config_dialog.h"
+#include "action.h"
+#include "action_builtin.h"
 #include "screenshot.h"
 #include "screenshot_overlay.h"
 #include "screenshot_toolbar.h"
@@ -53,6 +55,12 @@ static BOOL InitializeModules(void) {
 
     // 初始化键位映射模块（必须在 ConfigLoad 之前，因为 ConfigLoad 会调用 ParseMappings）
     KeymapInit();
+
+    // 初始化动作模块
+    ActionInit();
+
+    // 初始化内置功能模块
+    BuiltinInit();
 
     // 加载配置文件
     const Config* config = ConfigGet();
@@ -200,6 +208,12 @@ static void CleanupModules(void) {
 
     // 清理音频模块
     AudioCleanup();
+
+    // 清理动作模块
+    ActionCleanup();
+
+    // 清理内置功能模块
+    BuiltinCleanup();
 
     // 清理键位映射模块
     KeymapCleanup();

@@ -7,6 +7,9 @@ extern "C" {
 #include "audio.h"
 #include "voice.h"
 #include "voice_prompt.h"
+#include "action.h"
+#include "action_builtin.h"
+#include "hook.h"
 }
 
 #include <windows.h>
@@ -21,21 +24,24 @@ extern "C" {
 
 #include "WebView2.h"
 
-struct MappingItem {
-    std::wstring from;
-    std::wstring to;
+struct ActionItem {
+    std::wstring trigger;
+    int type;  // 0=key_mapping, 1=builtin, 2=command
+    std::wstring param;
 };
 
-struct PreparedMapping {
+struct PreparedAction {
+    char trigger[16];
     WORD scanCode;
-    UINT targetVk;
-    std::string name;
+    ActionType type;
+    char param[256];
 };
 
 struct ConfigWebViewWindow;
 
 static const wchar_t* kWindowClass = L"PowerCapslockConfigWebView";
 static HMODULE g_webView2Loader = NULL;
+static ConfigWebViewWindow* g_activeWindow = NULL;
 
 typedef HRESULT(STDAPICALLTYPE* CreateCoreWebView2EnvironmentWithOptionsFn)(
     PCWSTR browserExecutableFolder,
@@ -184,16 +190,39 @@ static std::wstring JsonGetString(const std::wstring& json, const wchar_t* key) 
     return JsonReadStringAt(json, quote);
 }
 
-static std::vector<MappingItem> JsonGetMappings(const std::wstring& json) {
-    std::vector<MappingItem> mappings;
-    size_t keyPos = json.find(L"\"mappings\"");
+static int JsonGetInt(const std::wstring& json, const wchar_t* key) {
+    std::wstring pattern = L"\"";
+    pattern += key;
+    pattern += L"\"";
+    size_t keyPos = json.find(pattern);
     if (keyPos == std::wstring::npos) {
-        return mappings;
+        return 0;
+    }
+    size_t colon = json.find(L':', keyPos + pattern.size());
+    if (colon == std::wstring::npos) {
+        return 0;
+    }
+    // Skip whitespace
+    size_t numStart = colon + 1;
+    while (numStart < json.size() && (json[numStart] == L' ' || json[numStart] == L'\t')) {
+        numStart++;
+    }
+    if (numStart >= json.size()) {
+        return 0;
+    }
+    return _wtoi(json.c_str() + numStart);
+}
+
+static std::vector<ActionItem> JsonGetActions(const std::wstring& json) {
+    std::vector<ActionItem> actions;
+    size_t keyPos = json.find(L"\"actions\"");
+    if (keyPos == std::wstring::npos) {
+        return actions;
     }
     size_t arrayStart = json.find(L'[', keyPos);
     size_t arrayEnd = json.find(L']', arrayStart);
     if (arrayStart == std::wstring::npos || arrayEnd == std::wstring::npos) {
-        return mappings;
+        return actions;
     }
 
     size_t cursor = arrayStart;
@@ -207,13 +236,16 @@ static std::vector<MappingItem> JsonGetMappings(const std::wstring& json) {
             break;
         }
         std::wstring object = json.substr(objectStart, objectEnd - objectStart + 1);
-        MappingItem item = {JsonGetString(object, L"from"), JsonGetString(object, L"to")};
-        if (!item.from.empty() && !item.to.empty()) {
-            mappings.push_back(item);
+        ActionItem item;
+        item.trigger = JsonGetString(object, L"trigger");
+        item.type = JsonGetInt(object, L"type");
+        item.param = JsonGetString(object, L"param");
+        if (!item.trigger.empty()) {
+            actions.push_back(item);
         }
         cursor = objectEnd + 1;
     }
-    return mappings;
+    return actions;
 }
 
 static std::wstring UpperAscii(std::wstring value) {
@@ -223,37 +255,30 @@ static std::wstring UpperAscii(std::wstring value) {
     return value;
 }
 
-static void ExtractMappingName(const char* name, std::wstring& from, std::wstring& to) {
-    std::string text = name != NULL ? name : "";
-    size_t arrow = text.find("->");
-    if (arrow == std::string::npos) {
-        from = UpperAscii(Utf8ToWide(text));
-        to = from;
-        return;
-    }
-    from = UpperAscii(Utf8ToWide(text.substr(0, arrow)));
-    to = UpperAscii(Utf8ToWide(text.substr(arrow + 2)));
-}
-
-static std::vector<MappingItem> CurrentMappings(void) {
-    std::vector<MappingItem> result;
-    int count = 0;
-    const KeyMapping* mappings = KeymapGetAll(&count);
+static std::vector<ActionItem> CurrentActions(void) {
+    std::vector<ActionItem> result;
+    int count = ActionGetCount();
     for (int i = 0; i < count; i++) {
-        std::wstring from;
-        std::wstring to;
-        ExtractMappingName(mappings[i].name, from, to);
-        result.push_back({from, to});
+        const Action* action = ActionGet(i);
+        if (action != NULL) {
+            ActionItem item;
+            item.trigger = UpperAscii(Utf8ToWide(action->trigger));
+            item.type = (int)action->type;
+            item.param = UpperAscii(Utf8ToWide(action->param));
+            result.push_back(item);
+        }
     }
     return result;
 }
 
-static std::wstring MappingSignature(const std::vector<MappingItem>& mappings) {
+static std::wstring ActionSignature(const std::vector<ActionItem>& actions) {
     std::wstring result;
-    for (const MappingItem& item : mappings) {
-        result += UpperAscii(item.from);
-        result += L"->";
-        result += UpperAscii(item.to);
+    for (const ActionItem& item : actions) {
+        result += UpperAscii(item.trigger);
+        result += L"|";
+        result += std::to_wstring(item.type);
+        result += L"|";
+        result += UpperAscii(item.param);
         result += L";";
     }
     return result;
@@ -265,17 +290,33 @@ static std::wstring BuildInitJson(void) {
     json += JsonEscape(Utf8ToWide(config->logDirPath));
     json += L"\",\"modelPath\":\"";
     json += JsonEscape(Utf8ToWide(config->modelDirPath));
-    json += L"\",\"mappings\":[";
+    json += L"\",\"actions\":[";
 
-    std::vector<MappingItem> mappings = CurrentMappings();
-    for (size_t i = 0; i < mappings.size(); i++) {
+    std::vector<ActionItem> actions = CurrentActions();
+    for (size_t i = 0; i < actions.size(); i++) {
         if (i > 0) {
             json += L",";
         }
-        json += L"{\"from\":\"";
-        json += JsonEscape(UpperAscii(mappings[i].from));
-        json += L"\",\"to\":\"";
-        json += JsonEscape(UpperAscii(mappings[i].to));
+        json += L"{\"trigger\":\"";
+        json += JsonEscape(UpperAscii(actions[i].trigger));
+        json += L"\",\"type\":";
+        json += std::to_wstring(actions[i].type);
+        json += L",\"param\":\"";
+        json += JsonEscape(UpperAscii(actions[i].param));
+        json += L"\"}";
+    }
+    json += L"],\"builtins\":[";
+
+    int builtinCount = 0;
+    const char** builtins = BuiltinGetList(&builtinCount);
+    for (int i = 0; i < builtinCount; i++) {
+        if (i > 0) {
+            json += L",";
+        }
+        json += L"{\"name\":\"";
+        json += JsonEscape(Utf8ToWide(builtins[i]));
+        json += L"\",\"displayName\":\"";
+        json += JsonEscape(Utf8ToWide(BuiltinGetDisplayName(builtins[i])));
         json += L"\"}";
     }
     json += L"]}";
@@ -311,13 +352,13 @@ struct ConfigWebViewWindow {
     ICoreWebView2* webview = NULL;
     EventRegistrationToken messageToken = {};
     std::wstring html;
-    std::wstring initialMappingSignature;
+    std::wstring initialActionSignature;
     std::wstring testAction;
     std::wstring testBrowseLogPath;
     std::wstring testBrowseModelPath;
     bool testSkipModelLoad = false;
     bool saved = false;
-    bool mappingsChanged = false;
+    bool actionsChanged = false;
     bool testAutomationStarted = false;
 
     void Resize(void) {
@@ -342,6 +383,52 @@ struct ConfigWebViewWindow {
         PostJson(json);
     }
 
+    void NotifyKeyCaptured(const char* keyName, WORD scanCode) {
+        std::wstring json = L"{\"type\":\"key_captured\",\"keyName\":\"";
+        json += JsonEscape(Utf8ToWide(keyName));
+        json += L"\",\"scanCode\":";
+        json += std::to_wstring(scanCode);
+        json += L"}";
+        PostJson(json);
+    }
+
+    void SendActionsToWebView(void) {
+        std::wstring json = L"{\"type\":\"actions_update\",\"actions\":[";
+        std::vector<ActionItem> actions = CurrentActions();
+        for (size_t i = 0; i < actions.size(); i++) {
+            if (i > 0) {
+                json += L",";
+            }
+            json += L"{\"trigger\":\"";
+            json += JsonEscape(UpperAscii(actions[i].trigger));
+            json += L"\",\"type\":";
+            json += std::to_wstring(actions[i].type);
+            json += L",\"param\":\"";
+            json += JsonEscape(UpperAscii(actions[i].param));
+            json += L"\"}";
+        }
+        json += L"]}";
+        PostJson(json);
+    }
+
+    void SendBuiltinListToWebView(void) {
+        std::wstring json = L"{\"type\":\"builtins_update\",\"builtins\":[";
+        int builtinCount = 0;
+        const char** builtins = BuiltinGetList(&builtinCount);
+        for (int i = 0; i < builtinCount; i++) {
+            if (i > 0) {
+                json += L",";
+            }
+            json += L"{\"name\":\"";
+            json += JsonEscape(Utf8ToWide(builtins[i]));
+            json += L"\",\"displayName\":\"";
+            json += JsonEscape(Utf8ToWide(BuiltinGetDisplayName(builtins[i])));
+            json += L"\"}";
+        }
+        json += L"]}";
+        PostJson(json);
+    }
+
     void MaybeRunTestAutomation(void) {
         if (testAction.empty() || testAutomationStarted || webview == NULL) {
             return;
@@ -356,17 +443,9 @@ struct ConfigWebViewWindow {
             L"function fail(message){try{chrome.webview.postMessage(JSON.stringify({type:'test-error',message:String(message)}));}catch(e){}}\n" +
             L"function by(id){const el=document.getElementById(id);if(!el)throw new Error('missing '+id);return el;}\n" +
             L"function later(fn){setTimeout(function(){try{fn();}catch(e){fail(e&&e.message?e.message:e);}},120);}\n" +
-            L"function rows(){return Array.from(document.querySelectorAll('#mappingRows tr'));}\n" +
-            L"function rowFor(from){return rows().find(row=>row.cells[0].textContent.trim()===from);}\n" +
-            L"function hasMapping(from,to){return rows().some(row=>row.cells[0].textContent.trim()===from&&row.cells[1].textContent.trim()===to);}\n" +
-            L"function mappingTab(){document.querySelector('[data-tab=\"mappings\"]').click();}\n" +
-            L"function waitValue(id,expected,next,start){try{if(!expected||by(id).value===expected){later(next);return;}if(Date.now()-start>3000)throw new Error(id+' did not receive browse path');setTimeout(function(){waitValue(id,expected,next,start);},60);}catch(e){fail(e&&e.message?e.message:e);}}\n" +
-            L"function addMapping(next){by('addMapping').click();later(function(){by('fromKey').value='Q';by('toKey').value='B';by('confirmMapping').click();later(function(){if(!hasMapping('Q','B'))throw new Error('Q->B was not added');next();});});}\n" +
-            L"function editMapping(next){const row=rowFor('Q');if(!row)throw new Error('Q mapping missing before edit');row.click();later(function(){by('editMapping').click();later(function(){by('fromKey').value='Q';by('toKey').value='C';by('confirmMapping').click();later(function(){if(!hasMapping('Q','C'))throw new Error('Q->C was not edited');next();});});});}\n" +
-            L"function deleteMapping(next){const row=rowFor('Q');if(!row)throw new Error('Q mapping missing before delete');row.click();later(function(){by('removeMapping').click();later(function(){if(rowFor('Q'))throw new Error('Q mapping was not deleted');next();});});}\n" +
             L"function save(){later(function(){by('save').click();});}\n" +
-            L"function run(){if(action==='add'){by('browseLog').click();waitValue('logPath',logPath,function(){by('browseModel').click();waitValue('modelPath',modelPath,function(){mappingTab();later(function(){addMapping(save);});},Date.now());},Date.now());return;}mappingTab();later(function(){if(action==='edit')editMapping(save);else if(action==='delete')deleteMapping(save);else throw new Error('unknown action '+action);});}\n" +
-            L"function waitReady(){try{if(!by('mappingRows').children.length){setTimeout(waitReady,60);return;}run();}catch(e){fail(e&&e.message?e.message:e);}}\n" +
+            L"function run(){by('browseLog').click();}\n" +
+            L"function waitReady(){try{if(!document.querySelector('#actionRows')){setTimeout(waitReady,60);return;}run();}catch(e){fail(e&&e.message?e.message:e);}}\n" +
             L"waitReady();\n" +
             L"})();";
         webview->ExecuteScript(script.c_str(), NULL);
@@ -475,6 +554,22 @@ public:
             }
             return S_OK;
         }
+        if (type == L"start_capture") {
+            std::wstring captureType = JsonGetString(message, L"captureType");
+            CaptureMode mode = CAPTURE_MODE_TRIGGER;
+            if (captureType == L"output") {
+                mode = CAPTURE_MODE_OUTPUT;
+            }
+            HookSetCaptureMode(mode);
+            LOG_INFO("[Config] Started capture mode: %d", mode);
+            return S_OK;
+        }
+        if (type == L"stop_capture") {
+            HookSetCaptureMode(CAPTURE_MODE_NONE);
+            HookClearCapturedKey();
+            LOG_INFO("[Config] Stopped capture mode");
+            return S_OK;
+        }
         if (type == L"save") {
             Save(message);
             return S_OK;
@@ -488,30 +583,60 @@ private:
     void Save(const std::wstring& message) {
         std::wstring logPath = JsonGetString(message, L"logPath");
         std::wstring modelPath = JsonGetString(message, L"modelPath");
-        std::vector<MappingItem> mappings = JsonGetMappings(message);
-        if (mappings.empty()) {
-            owner->PostError(L"至少需要保留一条映射。");
+        std::vector<ActionItem> actionItems = JsonGetActions(message);
+        if (actionItems.empty()) {
+            owner->PostError(L"至少需要保留一条动作配置。");
             return;
         }
 
-        std::vector<PreparedMapping> prepared;
+        std::vector<PreparedAction> prepared;
         std::set<WORD> usedScanCodes;
-        for (const MappingItem& item : mappings) {
-            std::string from = WideToUtf8(UpperAscii(item.from));
-            std::string to = WideToUtf8(UpperAscii(item.to));
-            WORD scanCode = ConfigKeyNameToScanCode(from.c_str());
-            UINT targetVk = ConfigKeyNameToVkCode(to.c_str());
-            if (scanCode == 0 || targetVk == 0) {
-                owner->PostError(L"按键名称无效，请检查映射表。");
+        for (const ActionItem& item : actionItems) {
+            std::string trigger = WideToUtf8(UpperAscii(item.trigger));
+            std::string param = WideToUtf8(item.param);
+            WORD scanCode = ConfigKeyNameToScanCode(trigger.c_str());
+            if (scanCode == 0) {
+                owner->PostError(L"触发键名称无效，请检查配置表。");
                 return;
             }
             if (usedScanCodes.find(scanCode) != usedScanCodes.end()) {
-                owner->PostError(L"每个原始按键只能配置一次，请删除重复映射。");
+                owner->PostError(L"每个触发键只能配置一次，请删除重复配置。");
                 return;
             }
+            // Validate param based on type
+            if (item.type == ACTION_TYPE_KEY_MAPPING) {
+                UINT targetVk = ConfigKeyNameToVkCode(param.c_str());
+                if (targetVk == 0) {
+                    owner->PostError(L"目标按键名称无效，请检查配置表。");
+                    return;
+                }
+            } else if (item.type == ACTION_TYPE_BUILTIN) {
+                // Check if builtin exists
+                int builtinCount = 0;
+                const char** builtins = BuiltinGetList(&builtinCount);
+                bool found = false;
+                for (int i = 0; i < builtinCount; i++) {
+                    if (_stricmp(builtins[i], param.c_str()) == 0) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    owner->PostError(L"内置功能名称无效，请检查配置表。");
+                    return;
+                }
+            }
+            // For ACTION_TYPE_COMMAND, param can be any string
+
             usedScanCodes.insert(scanCode);
-            std::string name = from + "->" + to;
-            prepared.push_back({scanCode, targetVk, name});
+            PreparedAction pa;
+            strncpy(pa.trigger, trigger.c_str(), sizeof(pa.trigger) - 1);
+            pa.trigger[sizeof(pa.trigger) - 1] = '\0';
+            pa.scanCode = scanCode;
+            pa.type = (ActionType)item.type;
+            strncpy(pa.param, param.c_str(), sizeof(pa.param) - 1);
+            pa.param[sizeof(pa.param) - 1] = '\0';
+            prepared.push_back(pa);
         }
 
         Config updated = *ConfigGet();
@@ -546,9 +671,17 @@ private:
         CopyPathToConfig(modelPath, updated.modelDirPath, sizeof(updated.modelDirPath));
         ConfigSet(&updated);
 
-        KeymapClear();
-        for (const PreparedMapping& item : prepared) {
-            KeymapAddMapping(item.scanCode, item.targetVk, _strdup(item.name.c_str()));
+        // Update actions
+        ActionResetToDefaults();  // Clear all and start fresh
+        for (const PreparedAction& item : prepared) {
+            Action action;
+            strncpy(action.trigger, item.trigger, sizeof(action.trigger) - 1);
+            action.trigger[sizeof(action.trigger) - 1] = '\0';
+            action.scanCode = item.scanCode;
+            action.type = item.type;
+            strncpy(action.param, item.param, sizeof(action.param) - 1);
+            action.param[sizeof(action.param) - 1] = '\0';
+            ActionAdd(&action);
         }
 
         if (!ConfigSave(NULL)) {
@@ -557,7 +690,7 @@ private:
         }
 
         owner->saved = true;
-        owner->mappingsChanged = MappingSignature(mappings) != owner->initialMappingSignature;
+        owner->actionsChanged = ActionSignature(actionItems) != owner->initialActionSignature;
 
         if (modelLoadedNow) {
             bool audioReady = AudioInit();
@@ -650,6 +783,23 @@ private:
     ConfigWebViewWindow* owner;
 };
 
+// Check for captured keys and notify webview
+void CheckCapturedKey(void) {
+    if (g_activeWindow == NULL || g_activeWindow->webview == NULL) {
+        return;
+    }
+    if (!HookIsCaptureMode()) {
+        return;
+    }
+    char keyName[32];
+    WORD scanCode;
+    if (HookGetCapturedKey(keyName, sizeof(keyName), &scanCode)) {
+        g_activeWindow->NotifyKeyCaptured(keyName, scanCode);
+        HookClearCapturedKey();
+        HookSetCaptureMode(CAPTURE_MODE_NONE);
+    }
+}
+
 static LRESULT CALLBACK ConfigWebViewWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     ConfigWebViewWindow* state = (ConfigWebViewWindow*)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
 
@@ -659,6 +809,7 @@ static LRESULT CALLBACK ConfigWebViewWndProc(HWND hwnd, UINT msg, WPARAM wParam,
             state = (ConfigWebViewWindow*)cs->lpCreateParams;
             state->hwnd = hwnd;
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, (LONG_PTR)state);
+            g_activeWindow = state;
             return TRUE;
         }
         case WM_SIZE:
@@ -666,11 +817,19 @@ static LRESULT CALLBACK ConfigWebViewWndProc(HWND hwnd, UINT msg, WPARAM wParam,
                 state->Resize();
             }
             return 0;
+        case WM_TIMER:
+            CheckCapturedKey();
+            return 0;
         case WM_CLOSE:
             DestroyWindow(hwnd);
             return 0;
         case WM_NCDESTROY:
             if (state != NULL) {
+                if (g_activeWindow == state) {
+                    g_activeWindow = NULL;
+                }
+                HookSetCaptureMode(CAPTURE_MODE_NONE);
+                HookClearCapturedKey();
                 state->ReleaseWebView();
                 SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
             }
@@ -801,7 +960,7 @@ extern "C" bool ShowConfigDialog(HWND hParent) {
 
     ConfigWebViewWindow state;
     state.parent = hParent;
-    state.initialMappingSignature = MappingSignature(CurrentMappings());
+    state.initialActionSignature = ActionSignature(CurrentActions());
     state.html = ReadUtf8File(GetExeDir() + L"\\resources\\config_ui.html");
     state.testAction = GetEnvString(L"POWERCAPSLOCK_CONFIG_WEBVIEW_TEST_ACTION");
     state.testBrowseLogPath = GetEnvString(L"POWERCAPSLOCK_CONFIG_WEBVIEW_TEST_LOG_PATH");
@@ -828,6 +987,9 @@ extern "C" bool ShowConfigDialog(HWND hParent) {
         }
         return false;
     }
+
+    // Set timer to check for captured keys
+    SetTimer(hwnd, 1, 100, NULL);
 
     CenterWindow(hwnd, hParent);
     if (hParent != NULL) {
@@ -865,5 +1027,5 @@ extern "C" bool ShowConfigDialog(HWND hParent) {
         CoUninitialize();
     }
 
-    return state.saved && state.mappingsChanged;
+    return state.saved && state.actionsChanged;
 }

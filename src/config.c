@@ -1,6 +1,7 @@
 #include "config.h"
 #include "keymap.h"
 #include "logger.h"
+#include "action.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -455,6 +456,106 @@ static void ParseMappings(const char* json) {
     LOG_INFO("Loaded %d key mappings from config", mappingCount);
 }
 
+// 解析 actions 数组（新格式）
+static void ParseActions(const char* json) {
+    const char* actionsStart = strstr(json, "\"actions\"");
+    if (actionsStart == NULL) {
+        LOG_DEBUG("No actions array found in config");
+        return;
+    }
+
+    const char* arrayStart = strchr(actionsStart, '[');
+    if (arrayStart == NULL) {
+        LOG_WARN("Invalid actions array format");
+        return;
+    }
+
+    const char* pos = arrayStart;
+    int actionCount = 0;
+
+    while ((pos = strstr(pos, "\"trigger\"")) != NULL) {
+        // 解析 trigger
+        const char* triggerStart = strchr(pos + 9, '"');
+        if (triggerStart == NULL) break;
+        triggerStart++;
+        const char* triggerEnd = strchr(triggerStart, '"');
+        if (triggerEnd == NULL) break;
+
+        char trigger[32] = {0};
+        int triggerLen = triggerEnd - triggerStart;
+        if (triggerLen >= 32) triggerLen = 31;
+        strncpy(trigger, triggerStart, triggerLen);
+
+        // 解析 type
+        const char* typePos = strstr(triggerEnd, "\"type\"");
+        if (typePos == NULL) break;
+        const char* typeStart = strchr(typePos + 6, '"');
+        if (typeStart == NULL) break;
+        typeStart++;
+        const char* typeEnd = strchr(typeStart, '"');
+        if (typeEnd == NULL) break;
+
+        char typeStr[32] = {0};
+        int typeLen = typeEnd - typeStart;
+        if (typeLen >= 32) typeLen = 31;
+        strncpy(typeStr, typeStart, typeLen);
+
+        ActionType type = ACTION_TYPE_KEY_MAPPING;
+        if (strcmp(typeStr, "builtin") == 0) {
+            type = ACTION_TYPE_BUILTIN;
+        } else if (strcmp(typeStr, "command") == 0) {
+            type = ACTION_TYPE_COMMAND;
+        }
+
+        // 解析 param
+        const char* paramPos = strstr(typeEnd, "\"param\"");
+        if (paramPos == NULL) break;
+        const char* paramStart = strchr(paramPos + 7, '"');
+        if (paramStart == NULL) break;
+        paramStart++;
+        const char* paramEnd = strchr(paramStart, '"');
+        if (paramEnd == NULL) break;
+
+        char param[256] = {0};
+        int paramLen = paramEnd - paramStart;
+        if (paramLen >= 256) paramLen = 255;
+        strncpy(param, paramStart, paramLen);
+
+        // 创建动作
+        Action action = {0};
+        strncpy(action.trigger, trigger, sizeof(action.trigger) - 1);
+        action.type = type;
+        strncpy(action.param, param, sizeof(action.param) - 1);
+        ActionAdd(&action);
+        actionCount++;
+
+        pos = paramEnd;
+    }
+
+    LOG_INFO("Loaded %d actions from config", actionCount);
+}
+
+// 迁移旧 mappings 到 actions
+void ConfigMigrateMappingsToActions(void) {
+    int mappingCount;
+    const KeyMapping* mappings = KeymapGetAll(&mappingCount);
+
+    for (int i = 0; i < mappingCount; i++) {
+        const char* triggerName = ScanCodeToName(mappings[i].scanCode);
+        const char* paramName = VkCodeToName(mappings[i].targetVk);
+
+        if (triggerName != NULL && paramName != NULL) {
+            Action action = {0};
+            strncpy(action.trigger, triggerName, sizeof(action.trigger) - 1);
+            action.type = ACTION_TYPE_KEY_MAPPING;
+            strncpy(action.param, paramName, sizeof(action.param) - 1);
+            ActionAdd(&action);
+        }
+    }
+
+    LOG_INFO("Migrated %d mappings to actions", mappingCount);
+}
+
 bool ConfigLoad(const char* path) {
     const char* configPath = (path != NULL) ? path : g_config.configPath;
 
@@ -522,8 +623,14 @@ bool ConfigLoad(const char* path) {
         strncpy(g_config.modelDirPath, temp, sizeof(g_config.modelDirPath) - 1);
     }
 
-    // 解析 mappings 数组
-    ParseMappings(content);
+    // 优先尝试加载 actions 数组
+    ParseActions(content);
+
+    // 如果没有 actions，加载 mappings 并迁移
+    if (ActionGetCount() == 0) {
+        ParseMappings(content);
+        ConfigMigrateMappingsToActions();
+    }
 
     free(content);
     LOG_INFO("Config loaded from: %s", configPath);
@@ -566,33 +673,37 @@ bool ConfigSave(const char* path) {
         "        \"key\": \"%s\",\n"
         "        \"suppress_original\": %s,\n"
         "        \"control_led\": %s\n"
-        "    },\n"
-        "    \"mappings\": [\n",
+        "    },\n",
         g_config.modifierKey,
         g_config.suppressOriginal ? "true" : "false",
         g_config.controlLed ? "true" : "false"
     );
 
-    // Get all current mappings and write them dynamically
-    int mappingCount;
-    const KeyMapping* mappings = KeymapGetAll(&mappingCount);
+    // 写入 actions 数组
+    offset += snprintf(content + offset, sizeof(content) - offset,
+        "    \"actions\": [\n");
 
-    for (int i = 0; i < mappingCount; i++) {
-        const char* fromName = ScanCodeToName(mappings[i].scanCode);
-        const char* toName = VkCodeToName(mappings[i].targetVk);
-        if (fromName != NULL && toName != NULL) {
-            if (i == 0) {
-                // First item, no leading comma
-                offset += snprintf(content + offset, sizeof(content) - offset,
-                    "        {\"from\": \"%s\", \"to\": \"%s\"}", fromName, toName);
-            } else {
-                offset += snprintf(content + offset, sizeof(content) - offset,
-                    ",\n        {\"from\": \"%s\", \"to\": \"%s\"}", fromName, toName);
-            }
+    for (int i = 0; i < ActionGetCount(); i++) {
+        const Action* action = ActionGet(i);
+        const char* typeStr = "key_mapping";
+        if (action->type == ACTION_TYPE_BUILTIN) {
+            typeStr = "builtin";
+        } else if (action->type == ACTION_TYPE_COMMAND) {
+            typeStr = "command";
+        }
+
+        if (i == 0) {
+            offset += snprintf(content + offset, sizeof(content) - offset,
+                "        {\"trigger\": \"%s\", \"type\": \"%s\", \"param\": \"%s\"}",
+                action->trigger, typeStr, action->param);
+        } else {
+            offset += snprintf(content + offset, sizeof(content) - offset,
+                ",\n        {\"trigger\": \"%s\", \"type\": \"%s\", \"param\": \"%s\"}",
+                action->trigger, typeStr, action->param);
         }
     }
 
-    // Write closing bracket for mappings and continue with rest
+    // Write closing bracket for actions and continue with rest
     offset += snprintf(content + offset, sizeof(content) - offset,
         "\n"
         "    ],\n"
@@ -640,7 +751,7 @@ bool ConfigSave(const char* path) {
     }
 
     if (WriteFileContent(configPath, content)) {
-        LOG_INFO("Config saved to: %s (%d mappings)", configPath, mappingCount);
+        LOG_INFO("Config saved to: %s (%d actions)", configPath, ActionGetCount());
         return true;
     } else {
         LOG_ERROR("Failed to save config to: %s", configPath);

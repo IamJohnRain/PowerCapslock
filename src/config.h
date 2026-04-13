@@ -65,4 +65,10 @@ const char* ConfigGetLogPath(void);
 WORD ConfigKeyNameToScanCode(const char* name);
 UINT ConfigKeyNameToVkCode(const char* name);
 
+// Actions 配置接口
+#include "action.h"
+bool ConfigLoadActions(const char* json);
+char* ConfigSaveActions(void);
+void ConfigMigrateMappingsToActions(void);
+
 #endif // CONFIG_H
