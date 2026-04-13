@@ -48,3 +48,4 @@ test/*
 !test/README_CONFIG_FUNCTION_TEST.md
 test/output/
 test/test_run_*/
+.worktrees/
