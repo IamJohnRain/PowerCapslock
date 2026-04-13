@@ -4,6 +4,7 @@
 #include "voice.h"
 #include "audio.h"
 #include "voice_prompt.h"
+#include "screenshot_manager.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -27,8 +28,7 @@ static bool HandleVoiceInput(void) {
 
 static bool HandleScreenshot(void) {
     LOG_INFO("[Builtin] Screenshot triggered");
-    // TODO: 实现截图功能
-    return false;
+    return ScreenshotManagerStart();
 }
 
 static bool HandleToggleEnabled(void) {
@@ -46,10 +46,14 @@ void BuiltinInit(void) {
     BuiltinRegister("screenshot", HandleScreenshot);
     BuiltinRegister("toggle_enabled", HandleToggleEnabled);
 
+    // 初始化截图管理器
+    ScreenshotManagerInit();
+
     LOG_INFO("Builtin module initialized with %d handlers", g_builtinCount);
 }
 
 void BuiltinCleanup(void) {
+    ScreenshotManagerCleanup();
     g_builtinCount = 0;
 }
 

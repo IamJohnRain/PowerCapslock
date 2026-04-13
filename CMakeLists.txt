@@ -31,6 +31,7 @@ set(SOURCES
     src/screenshot_float.c
     src/screenshot_annotate.c
     src/screenshot_ocr.c
+    src/screenshot_manager.c
     resources/resource.rc
 )
 
@@ -52,6 +53,7 @@ set(HEADERS
     src/screenshot_float.h
     src/screenshot_annotate.h
     src/screenshot_ocr.h
+    src/screenshot_manager.h
 )
 
 # 可执行文件

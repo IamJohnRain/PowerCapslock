@@ -146,6 +146,16 @@ void ActionResetToDefaults(void) {
         ActionAdd(&action);
     }
 
+    // 添加截图功能默认触发键 (CapsLock+X)
+    {
+        Action action = {0};
+        strncpy(action.trigger, "X", sizeof(action.trigger) - 1);
+        action.type = ACTION_TYPE_BUILTIN;
+        strncpy(action.param, "screenshot", sizeof(action.param) - 1);
+        action.scanCode = ConfigKeyNameToScanCode(action.trigger);
+        ActionAdd(&action);
+    }
+
     LOG_INFO("Actions reset to defaults (%d actions)", g_actionCount);
 }
 
