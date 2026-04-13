@@ -206,11 +206,19 @@
     }
 
     .button.secondary {
-      color: #ffffff;
+      color: #0a5a8a;
       background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.08)),
-        rgba(255, 255, 255, 0.1);
+        linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(240, 248, 255, 0.7)),
+        rgba(255, 255, 255, 0.6);
+      border: 1px solid rgba(10, 111, 183, 0.25);
       backdrop-filter: blur(12px);
+    }
+
+    .button.secondary:hover {
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 1), rgba(235, 250, 255, 0.85)),
+        rgba(255, 255, 255, 0.75);
+      border-color: rgba(10, 111, 183, 0.45);
     }
 
     .hero-tags {
@@ -361,7 +369,7 @@
 
     .workflow {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: 1fr;
       gap: 14px;
       margin-top: 20px;
     }
@@ -375,11 +383,14 @@
       margin-bottom: 8px;
       color: #0d679f;
       font-size: 15px;
+      line-height: 1.4;
     }
 
     .step span {
       color: var(--muted);
       line-height: 1.75;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
     }
 
     .voice {
