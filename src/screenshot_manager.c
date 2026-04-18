@@ -1,5 +1,8 @@
 #include "screenshot_manager.h"
 #include "screenshot_overlay.h"
+#include "screenshot_toolbar.h"
+#include "screenshot_float.h"
+#include "screenshot_ocr.h"
 #include "logger.h"
 
 #define MODULE_NAME "截图管理器"
@@ -19,6 +22,26 @@ bool ScreenshotManagerInit(void) {
         return false;
     }
 
+    if (!ScreenshotOverlayInit()) {
+        LOG_ERROR("[%s] 选区窗口模块初始化失败", MODULE_NAME);
+        return false;
+    }
+
+    if (!ScreenshotToolbarInit()) {
+        LOG_ERROR("[%s] 工具栏模块初始化失败", MODULE_NAME);
+        return false;
+    }
+
+    if (!ScreenshotFloatInit()) {
+        LOG_ERROR("[%s] 浮动窗口模块初始化失败", MODULE_NAME);
+        return false;
+    }
+
+    if (!OCRInit()) {
+        LOG_ERROR("[%s] OCR模块初始化失败", MODULE_NAME);
+        return false;
+    }
+
     g_initialized = true;
     LOG_INFO("[%s] 模块初始化成功", MODULE_NAME);
     return true;
@@ -35,6 +58,10 @@ void ScreenshotManagerCleanup(void) {
         g_active = false;
     }
 
+    OCRCleanup();
+    ScreenshotFloatCleanup();
+    ScreenshotToolbarCleanup();
+    ScreenshotOverlayCleanup();
     ScreenshotCleanup();
     g_initialized = false;
     LOG_INFO("[%s] 模块已清理", MODULE_NAME);

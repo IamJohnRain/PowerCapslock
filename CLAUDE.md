@@ -46,6 +46,19 @@ scripts\uninstall.bat
 | **Logger** | [logger.c](src/logger.c)/[h](src/logger.h) | File/console logging with DEBUG/INFO/WARN/ERROR levels. Log location: `%USERPROFILE%\.PowerCapslock\logs\powercapslock.log`. |
 | **Keyboard Layout** | [keyboard_layout.c](src/keyboard_layout.c)/[h](src/keyboard_layout.h) | Multi-language keyboard layout support via `MapVirtualKeyEx()`. |
 | **Voice Input** | [voice_input.c](src/voice_input.c)/[h](src/voice_input.h) | Voice-to-text input functionality using VolcEngine ARK API. |
+| **Screenshot** | [screenshot.c](src/screenshot.c)/[h](src/screenshot.h) | Screen capture functionality with region selection, annotation, and OCR. |
+| **Screenshot Manager** | [screenshot_manager.c](src/screenshot_manager.c)/[h](src/screenshot_manager.h) | Manages the complete screenshot workflow and UI components. |
+
+### Screenshot Feature Modules
+
+| Module | File | Description |
+|--------|------|-------------|
+| **Core Capture** | [screenshot.c](src/screenshot.c)/[h](src/screenshot.h) | Basic screen capture (full screen, region, monitor). Supports BMP/PNG/JPEG save, clipboard copy. |
+| **Selection Overlay** | [screenshot_overlay.c](src/screenshot_overlay.c)/[h](src/screenshot_overlay.h) | Transparent overlay window for selecting screen region with mouse drag. |
+| **Toolbar** | [screenshot_toolbar.c](src/screenshot_toolbar.c)/[h](src/screenshot_toolbar.h) | Floating toolbar with save/copy/cancel buttons for screenshot workflow. |
+| **Float Window** | [screenshot_float.c](src/screenshot_float.c)/[h](src/screenshot_float.h) | Floating preview window for captured screenshot. |
+| **Annotation** | [screenshot_annotate.c](src/screenshot_annotate.c)/[h](src/screenshot_annotate.h) | Drawing tools (rectangle, arrow, pencil, circle, text) for annotating screenshots. |
+| **OCR** | [screenshot_ocr.c](src/screenshot_ocr.c)/[h](src/screenshot_ocr.h) | Text recognition from screenshots using Tesseract OCR engine. |
 
 ### Key Technical Details
 
@@ -61,6 +74,7 @@ scripts\uninstall.bat
 | I/O | Home/End |
 | U/P | PageDown/PageUp |
 | 1-9, 0, -, = | F1-F12 |
+| X | Screenshot (built-in function) |
 
 ## Configuration
 
@@ -97,6 +111,37 @@ taskkill /F /IM PowerCapslock.exe
 PowerCapslock.exe --console
 ```
 
+### Screenshot Testing Commands
+
+```batch
+# Test screenshot capture
+PowerCapslock.exe --test-screenshot-capture 0 0 200 200 capture.bmp
+
+# Test screenshot save
+PowerCapslock.exe --test-screenshot-save save.bmp
+
+# Test clipboard copy
+PowerCapslock.exe --test-screenshot-clipboard
+
+# Run all screenshot tests
+PowerCapslock.exe --test-screenshot-all
+
+# Test individual UI components
+PowerCapslock.exe --test-screenshot-overlay
+PowerCapslock.exe --test-screenshot-toolbar
+PowerCapslock.exe --test-screenshot-float
+PowerCapslock.exe --test-screenshot-annotate
+PowerCapslock.exe --test-screenshot-ocr
+```
+
+### Python Test Suite
+
+```batch
+# Run the full screenshot functional test suite
+cd test
+python screenshot_function_test.py --stop-existing
+```
+
 ## Troubleshooting
 
 | Issue | Possible Cause | Solution |
@@ -106,6 +151,38 @@ PowerCapslock.exe --console
 | Logs not written | Permission issue | Verify `%USERPROFILE%` directory is writable |
 | Build fails | CMake generator mismatch | Delete `build/` directory and retry with correct generator |
 | Tray icon not showing | Explorer shell issue | Restart explorer.exe or re-login Windows |
+| Screenshot not triggering | Modules not initialized | **Fixed in v1.0.1**: Ensure `ScreenshotManagerInit()` initializes all required modules (overlay, toolbar, float, OCR) |
+| Screenshot shortcut not working | Config not loaded | Check that config has `{"trigger": "X", "type": "builtin", "param": "screenshot"}` and restart the program |
+
+### Screenshot Debug Checklist
+
+1. **Verify config**: Check `%USERPROFILE%\.PowerCapslock\config\config.json` has the screenshot action
+2. **Check logs**: Look for `[截图管理器]` entries in `%USERPROFILE%\.PowerCapslock\logs\powercapslock.log`
+3. **Run tests**: Use `--test-screenshot-all` to verify all screenshot components work
+4. **Restart program**: Always restart after configuration changes
+
+## Recent Fixes
+
+### 2026-04-18: Screenshot Manager Initialization Bug
+
+**Issue**: CapsLock+X screenshot shortcut was not triggering the screenshot UI.
+
+**Root Cause**: `ScreenshotManagerInit()` in `src/screenshot_manager.c` was only initializing the core `ScreenshotInit()` module, but not the dependent UI modules:
+- `ScreenshotOverlayInit()` - Selection overlay window
+- `ScreenshotToolbarInit()` - Toolbar UI
+- `ScreenshotFloatInit()` - Float preview window
+- `OCRInit()` - OCR module
+
+When `ScreenshotManagerStart()` tried to call `ScreenshotOverlayShow()`, it would fail because the overlay module was not initialized.
+
+**Fix**: Updated `ScreenshotManagerInit()` and `ScreenshotManagerCleanup()` to properly initialize and cleanup all required modules.
+
+**Files Modified**:
+- `src/screenshot_manager.c`
+
+**Verification**:
+- All 10 screenshot tests pass (`--test-screenshot-all`)
+- CapsLock+X now correctly brings up the selection overlay
 
 ## Important Files
 
