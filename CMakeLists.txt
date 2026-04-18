@@ -31,6 +31,8 @@ set(SOURCES
     src/screenshot_float.c
     src/screenshot_annotate.c
     src/screenshot_ocr.c
+    src/screenshot_ocr_tesseract.c
+    src/screenshot_ocr_selection.c
     src/screenshot_manager.c
     resources/resource.rc
 )

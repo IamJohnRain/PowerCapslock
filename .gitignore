@@ -47,6 +47,11 @@ test/*
 !test/config_function_test.py
 !test/README_CONFIG_FUNCTION_TEST.md
 !test/screenshot_function_test.py
+!test/screenshot_ocr_selection_test.py
+!test/test_capslock_a_bug.py
+!test/webview_config_test.py
 test/output/
 test/test_run_*/
+test/ocr_selection_*/
+test/*_output/
 .worktrees/

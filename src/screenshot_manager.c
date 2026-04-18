@@ -74,14 +74,15 @@ static void OnToolbarButton(ToolbarButtonType button, void* userData) {
             break;
 
         case TOOLBAR_BTN_OCR:
-            image = GetSelectionImageForAction();
+            // OCR 使用原始选区图像（不带标注），避免标注干扰识别
+            image = ScreenshotOverlayGetSelectionImage();
             if (image != NULL) {
                 const ScreenshotRect* selection = ScreenshotOverlayGetSelection();
                 screenSelection = SelectionToScreenRect(selection);
                 ScreenshotToolbarHide();
                 ScreenshotOverlayHide();
                 g_active = false;
-                if (!ScreenshotFloatShow(image, screenSelection.x, screenSelection.y)) {
+                if (!ScreenshotFloatShowOcr(image, screenSelection.x, screenSelection.y)) {
                     LOG_ERROR("[%s] Failed to show OCR float window", MODULE_NAME);
                 }
                 ScreenshotImageFree(image);
