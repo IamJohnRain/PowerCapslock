@@ -32,12 +32,17 @@ typedef struct {
 // 工具栏状态
 typedef struct {
     HWND hwnd;              // 工具栏窗口句柄
+    HWND ownerHwnd;
+    HWND tooltipHwnd;
     ScreenshotRect* selection;  // 关联的选区
     ToolbarButton buttons[TOOLBAR_BTN_COUNT];
     int buttonCount;
     int hoveredButton;      // 当前悬停按钮索引
+    int tooltipButton;
+    int pressedButton;
     bool isVisible;
     bool isHorizontal;      // 是否水平布局
+    bool trackingMouse;
 } ToolbarContext;
 
 // 回调函数类型
@@ -54,12 +59,14 @@ void ScreenshotToolbarCleanup(void);
 // callback: 按钮点击回调
 // userData: 回调用户数据
 bool ScreenshotToolbarShow(const ScreenshotRect* selection, ToolbarCallback callback, void* userData);
+void ScreenshotToolbarSetOwner(HWND ownerHwnd);
 
 // 隐藏工具栏
 void ScreenshotToolbarHide(void);
 
 // 检查工具栏是否可见
 bool ScreenshotToolbarIsVisible(void);
+HWND ScreenshotToolbarGetWindow(void);
 
 // 设置工具栏位置（根据选区自动计算）
 void ScreenshotToolbarUpdatePosition(const ScreenshotRect* selection);

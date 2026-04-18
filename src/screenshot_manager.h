@@ -11,6 +11,8 @@ bool ScreenshotManagerInit(void);
 void ScreenshotManagerCleanup(void);
 bool ScreenshotManagerStart(void);
 bool ScreenshotManagerIsActive(void);
+void ScreenshotManagerOnSelectionComplete(void);
+void ScreenshotManagerOnOverlayCancelled(void);
 
 #ifdef __cplusplus
 }

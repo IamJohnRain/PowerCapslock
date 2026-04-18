@@ -13,6 +13,28 @@ typedef enum {
     OVERLAY_STATE_TOOLBAR = 3     // 显示工具栏
 } OverlayState;
 
+typedef enum {
+    OVERLAY_ANNOTATE_NONE = 0,
+    OVERLAY_ANNOTATE_RECT,
+    OVERLAY_ANNOTATE_ARROW,
+    OVERLAY_ANNOTATE_PENCIL,
+    OVERLAY_ANNOTATE_CIRCLE,
+    OVERLAY_ANNOTATE_TEXT
+} OverlayAnnotateTool;
+
+#define OVERLAY_MAX_ANNOTATIONS 128
+#define OVERLAY_MAX_PENCIL_POINTS 256
+#define OVERLAY_TEXT_MAX 64
+
+typedef struct {
+    OverlayAnnotateTool tool;
+    POINT startPoint;
+    POINT endPoint;
+    POINT points[OVERLAY_MAX_PENCIL_POINTS];
+    int pointCount;
+    WCHAR text[OVERLAY_TEXT_MAX];
+} OverlayAnnotation;
+
 // 选区窗口状态
 typedef struct {
     HWND hwnd;                    // 覆盖层窗口句柄
@@ -26,6 +48,15 @@ typedef struct {
     HDC screenDC;                 // 屏幕内存 DC
     HCURSOR crossCursor;          // 十字光标
     OverlayState state;           // 当前状态
+    OverlayAnnotateTool annotateTool;
+    OverlayAnnotation annotations[OVERLAY_MAX_ANNOTATIONS];
+    int annotationCount;
+    bool isDrawingAnnotation;
+    bool isEditingText;
+    OverlayAnnotation currentAnnotation;
+    POINT textAnchor;
+    WCHAR editingText[OVERLAY_TEXT_MAX];
+    int editingTextLen;
 
     // 窗口识别
     HWND hoveredWindow;           // 悬停的窗口
@@ -46,12 +77,18 @@ void ScreenshotOverlayHide(void);
 
 // 检查选区窗口是否激活
 bool ScreenshotOverlayIsActive(void);
+HWND ScreenshotOverlayGetWindow(void);
 
 // 获取当前选区
 const ScreenshotRect* ScreenshotOverlayGetSelection(void);
 
 // 获取选区截图
 ScreenshotImage* ScreenshotOverlayGetSelectionImage(void);
+ScreenshotImage* ScreenshotOverlayGetAnnotatedSelectionImage(void);
+void ScreenshotOverlaySetAnnotationTool(OverlayAnnotateTool tool);
+OverlayAnnotateTool ScreenshotOverlayGetAnnotationTool(void);
+void ScreenshotOverlayClearAnnotations(void);
+bool ScreenshotOverlayHasAnnotations(void);
 
 // 测试函数（用于命令行测试）
 int ScreenshotOverlayTest(void);

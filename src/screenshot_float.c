@@ -22,6 +22,7 @@ static bool g_initialized = false;
 static LRESULT CALLBACK FloatWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 static void DrawFloatWindow(HDC hdc, FloatWindowContext* ctx);
 static void CalculateWindowSize(FloatWindowContext* ctx, int* width, int* height);
+static void ClampWindowToVirtualScreen(int* x, int* y, int width, int height);
 
 bool ScreenshotFloatInit(void) {
     if (g_initialized) {
@@ -34,7 +35,7 @@ bool ScreenshotFloatInit(void) {
     // 注册窗口类
     WNDCLASSEXA wc = {0};
     wc.cbSize = sizeof(WNDCLASSEXA);
-    wc.style = CS_HREDRAW | CS_VREDRAW;
+    wc.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
     wc.lpfnWndProc = FloatWndProc;
     wc.hInstance = GetModuleHandle(NULL);
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
@@ -114,12 +115,14 @@ bool ScreenshotFloatShow(const ScreenshotImage* image, int x, int y) {
     CalculateWindowSize(&g_float, &width, &height);
 
     // 计算窗口位置
-    if (x < 0 || y < 0) {
+    if (x == -1 && y == -1) {
         // 默认位置：屏幕右下角
         int screenWidth = GetSystemMetrics(SM_CXSCREEN);
         int screenHeight = GetSystemMetrics(SM_CYSCREEN);
         x = screenWidth - width - 20;
         y = screenHeight - height - 60;
+    } else {
+        ClampWindowToVirtualScreen(&x, &y, width, height);
     }
 
     // 创建窗口
@@ -127,7 +130,7 @@ bool ScreenshotFloatShow(const ScreenshotImage* image, int x, int y) {
         WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED,
         WINDOW_CLASS,
         "ScreenshotFloat",
-        WS_POPUP | WS_THICKFRAME,
+        WS_POPUP,
         x, y, width, height,
         NULL, NULL, GetModuleHandle(NULL), NULL);
 
@@ -212,24 +215,40 @@ static void CalculateWindowSize(FloatWindowContext* ctx, int* width, int* height
     int imgWidth = ctx->image->width;
     int imgHeight = ctx->image->height;
 
-    // 如果图像太大，缩小
-    if (imgWidth > MAX_WINDOW_WIDTH) {
-        float scale = (float)MAX_WINDOW_WIDTH / imgWidth;
-        imgWidth = MAX_WINDOW_WIDTH;
-        imgHeight = (int)(imgHeight * scale);
-    }
-    if (imgHeight > MAX_WINDOW_HEIGHT) {
-        float scale = (float)MAX_WINDOW_HEIGHT / imgHeight;
-        imgHeight = MAX_WINDOW_HEIGHT;
-        imgWidth = (int)(imgWidth * scale);
-    }
-
-    // 确保最小尺寸
-    if (imgWidth < MIN_WINDOW_WIDTH) imgWidth = MIN_WINDOW_WIDTH;
-    if (imgHeight < MIN_WINDOW_HEIGHT) imgHeight = MIN_WINDOW_HEIGHT;
+    if (imgWidth <= 0) imgWidth = MIN_WINDOW_WIDTH;
+    if (imgHeight <= 0) imgHeight = MIN_WINDOW_HEIGHT;
 
     *width = imgWidth;
     *height = imgHeight;
+}
+
+static void ClampWindowToVirtualScreen(int* x, int* y, int width, int height) {
+    int virtualLeft;
+    int virtualTop;
+    int virtualRight;
+    int virtualBottom;
+
+    if (x == NULL || y == NULL) {
+        return;
+    }
+
+    virtualLeft = GetSystemMetrics(SM_XVIRTUALSCREEN);
+    virtualTop = GetSystemMetrics(SM_YVIRTUALSCREEN);
+    virtualRight = virtualLeft + GetSystemMetrics(SM_CXVIRTUALSCREEN);
+    virtualBottom = virtualTop + GetSystemMetrics(SM_CYVIRTUALSCREEN);
+
+    if (*x + width > virtualRight) {
+        *x = virtualRight - width;
+    }
+    if (*y + height > virtualBottom) {
+        *y = virtualBottom - height;
+    }
+    if (*x < virtualLeft) {
+        *x = virtualLeft;
+    }
+    if (*y < virtualTop) {
+        *y = virtualTop;
+    }
 }
 
 static void DrawFloatWindow(HDC hdc, FloatWindowContext* ctx) {
@@ -269,17 +288,12 @@ static void DrawFloatWindow(HDC hdc, FloatWindowContext* ctx) {
     int imgWidth = ctx->image->width;
     int imgHeight = ctx->image->height;
 
-    // 缩放
     int winWidth = clientRect.right;
     int winHeight = clientRect.bottom;
-    float scaleX = (float)winWidth / imgWidth;
-    float scaleY = (float)winHeight / imgHeight;
-    float scale = scaleX < scaleY ? scaleX : scaleY;
-
-    int drawWidth = (int)(imgWidth * scale);
-    int drawHeight = (int)(imgHeight * scale);
-    int drawX = (winWidth - drawWidth) / 2;
-    int drawY = (winHeight - drawHeight) / 2;
+    int drawWidth = winWidth;
+    int drawHeight = winHeight;
+    int drawX = 0;
+    int drawY = 0;
 
     // 缩放绘制
     SetStretchBltMode(hdcMem, HALFTONE);
@@ -320,6 +334,11 @@ static LRESULT CALLBACK FloatWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
             SetCapture(hwnd);
             return 0;
         }
+
+        case WM_LBUTTONDBLCLK:
+            LOG_INFO("[浮动窗口] 双击关闭");
+            ScreenshotFloatHide();
+            return 0;
 
         case WM_MOUSEMOVE: {
             if (g_float.isDragging) {

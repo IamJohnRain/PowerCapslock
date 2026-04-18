@@ -26,13 +26,18 @@ $requiredFiles = @(
     @{ Source = Join-Path $buildDir "onnxruntime_providers_shared.dll"; Dest = "onnxruntime_providers_shared.dll" }
     @{ Source = Join-Path $buildDir "sherpa-onnx-c-api.dll"; Dest = "sherpa-onnx-c-api.dll" }
     @{ Source = Join-Path $buildDir "sherpa-onnx-cxx-api.dll"; Dest = "sherpa-onnx-cxx-api.dll" }
-    @{ Source = Join-Path $buildDir "resources\config_ui.html"; Dest = "resources\config_ui.html" }
 )
+
+$resourcesDir = Join-Path $repoRoot "resources"
 
 foreach ($item in $requiredFiles) {
     if (-not (Test-Path -LiteralPath $item.Source)) {
         throw "Required file not found: $($item.Source)"
     }
+}
+
+if (-not (Test-Path -LiteralPath $resourcesDir)) {
+    throw "Required resources directory not found: $resourcesDir"
 }
 
 New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
@@ -59,6 +64,8 @@ foreach ($item in $requiredFiles) {
     }
     Copy-Item -LiteralPath $item.Source -Destination $destination -Force
 }
+
+Copy-Item -LiteralPath $resourcesDir -Destination (Join-Path $stagingDir "resources") -Recurse -Force
 
 Set-Content -Path (Join-Path $stagingDir "README.txt") -Encoding UTF8 -Value @(
     "PowerCapslock $versionName",

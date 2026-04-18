@@ -71,6 +71,7 @@ target_link_libraries(powercapslock
     user32
     kernel32
     shell32
+    comdlg32
     comctl32
     gdi32
     msimg32
