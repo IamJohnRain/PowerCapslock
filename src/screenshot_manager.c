@@ -22,6 +22,7 @@ static ScreenshotImage* GetSelectionImageForAction(void);
 static bool BuildDefaultScreenshotPath(char* path, size_t pathSize);
 static bool PromptSaveScreenshotPath(char* path, size_t pathSize);
 static void SelectAnnotationTool(OverlayAnnotateTool tool);
+static bool RestoreActiveCaptureUi(void);
 
 static void OnToolbarButton(ToolbarButtonType button, void* userData) {
     ScreenshotImage* image;
@@ -194,6 +195,44 @@ static void SelectAnnotationTool(OverlayAnnotateTool tool) {
     LOG_INFO("[%s] Annotation tool selected: %d", MODULE_NAME, tool);
 }
 
+static bool RestoreActiveCaptureUi(void) {
+    const ScreenshotRect* selection;
+    ScreenshotRect screenSelection;
+    HWND overlayHwnd;
+    HWND toolbarHwnd;
+
+    if (!ScreenshotOverlayIsActive()) {
+        return false;
+    }
+
+    overlayHwnd = ScreenshotOverlayGetWindow();
+    if (overlayHwnd != NULL) {
+        SetWindowPos(overlayHwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    }
+
+    selection = ScreenshotOverlayGetSelection();
+    if (selection != NULL && selection->width > 0 && selection->height > 0) {
+        screenSelection = SelectionToScreenRect(selection);
+        ScreenshotToolbarSetOwner(overlayHwnd);
+        if (ScreenshotToolbarIsVisible()) {
+            ScreenshotToolbarUpdatePosition(&screenSelection);
+        } else if (!ScreenshotToolbarShow(&screenSelection, OnToolbarButton, NULL)) {
+            LOG_ERROR("[%s] Failed to restore screenshot toolbar", MODULE_NAME);
+        }
+
+        toolbarHwnd = ScreenshotToolbarGetWindow();
+        if (toolbarHwnd != NULL) {
+            SetWindowPos(toolbarHwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        }
+    }
+
+    g_active = true;
+    LOG_INFO("[%s] Screenshot already active, keeping current selection", MODULE_NAME);
+    return true;
+}
+
 static bool BuildDefaultScreenshotPath(char* path, size_t pathSize) {
     char baseDir[MAX_PATH];
     char targetDir[MAX_PATH];
@@ -300,6 +339,9 @@ bool ScreenshotManagerStart(void) {
         if (!ScreenshotManagerInit()) {
             return false;
         }
+    }
+    if ((g_active || ScreenshotOverlayIsActive()) && RestoreActiveCaptureUi()) {
+        return true;
     }
 
     LOG_INFO("[%s] 开始截图流程", MODULE_NAME);

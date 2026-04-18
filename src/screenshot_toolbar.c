@@ -23,7 +23,6 @@ static ToolbarButton g_defaultButtons[] = {
     { TOOLBAR_BTN_PENCIL, L"\x753B\x7B14\x6807\x6CE8",       "pencil", true },
     { TOOLBAR_BTN_CIRCLE, L"\x5706\x5F62\x6807\x6CE8",       "circle", true },
     { TOOLBAR_BTN_TEXT,   L"\x6587\x5B57\x6807\x6CE8",       "text", true },
-    { TOOLBAR_BTN_OCR,    L"OCR \x8BC6\x522B",               "ocr", true },
     { TOOLBAR_BTN_CLOSE,  L"\x5173\x95ED (Esc)",             "close", true },
 };
 

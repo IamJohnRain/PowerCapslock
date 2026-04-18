@@ -74,6 +74,8 @@ target_link_libraries(powercapslock
     comdlg32
     comctl32
     gdi32
+    gdiplus
+    imm32
     msimg32
     ole32
     uuid

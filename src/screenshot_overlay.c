@@ -2,16 +2,20 @@
 #include "screenshot.h"
 #include "screenshot_manager.h"
 #include "logger.h"
+#include <gdiplus.h>
+#include <imm.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
 #include <windowsx.h>
 
-static const char* WINDOW_CLASS = "PowerCapslockScreenshotOverlay";
+static const WCHAR* WINDOW_CLASS = L"PowerCapslockScreenshotOverlay";
 
 static OverlayContext g_overlay = {0};
 static bool g_initialized = false;
+static ULONG_PTR g_gdiplusToken = 0;
+static bool g_gdiplusReady = false;
 
 // 前向声明
 static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -22,7 +26,24 @@ static void DrawHoveredWindow(HDC hdc, OverlayContext* ctx);
 static void DrawSizeTip(HDC hdc, OverlayContext* ctx);
 static void DrawAnnotations(HDC hdc, OverlayContext* ctx);
 static void DrawAnnotation(HDC hdc, const OverlayAnnotation* annotation, int offsetX, int offsetY);
+static bool DrawAnnotationGdiPlus(HDC hdc, const OverlayAnnotation* annotation, int offsetX, int offsetY);
+static void DrawArrowGdiPlus(GpGraphics* graphics, GpPen* pen, GpBrush* brush, POINT start, POINT end);
 static void DrawArrow(HDC hdc, POINT start, POINT end);
+static void DrawTextAnnotationBoxes(HDC hdc, const OverlayContext* ctx);
+static void DrawTextCaret(HDC hdc, const OverlayContext* ctx);
+static HFONT CreateTextAnnotationFont(void);
+static POINT TextOriginFromClick(POINT pt);
+static int CeilReal(REAL value);
+static SIZE MeasureTextSize(const WCHAR* text, int len);
+static int MeasureTextWidth(const WCHAR* text, int len);
+static RECT GetTextAnnotationRect(const OverlayAnnotation* annotation);
+static int GetTextCaretIndexFromPoint(const OverlayAnnotation* annotation, POINT pt);
+static int HitTestTextAnnotation(const OverlayContext* ctx, POINT pt);
+static void RemoveAnnotationAt(OverlayContext* ctx, int index);
+static void BeginTextEdit(OverlayContext* ctx, POINT origin, const WCHAR* initialText, int annotationIndex, int caretIndex);
+static void DeleteTextBeforeCaret(OverlayContext* ctx);
+static void DeleteTextAtCaret(OverlayContext* ctx);
+static void NormalizeRectPoints(POINT start, POINT end, int* x, int* y, int* width, int* height);
 static bool PointInSelection(OverlayContext* ctx, POINT pt);
 static void ResetAnnotations(OverlayContext* ctx);
 static void StartAnnotation(OverlayContext* ctx, POINT pt);
@@ -30,13 +51,25 @@ static void UpdateAnnotation(OverlayContext* ctx, POINT pt);
 static void FinishAnnotation(OverlayContext* ctx, POINT pt);
 static void CancelTextEdit(OverlayContext* ctx);
 static void CommitTextEdit(OverlayContext* ctx);
+static void AppendEditingText(OverlayContext* ctx, const WCHAR* text, int len);
+static bool HandleImeComposition(HWND hwnd, LPARAM lParam);
 static void ApplyAnnotationsToImage(ScreenshotImage* image, const ScreenshotRect* selection);
 static HCURSOR CreateSelectionCursor(void);
 static HWND GetWindowFromPointEx(POINT pt);
 static void CaptureScreenToContext(OverlayContext* ctx);
 
+#define TEXT_CARET_TIMER_ID 1001
+#define TEXT_CARET_BLINK_MS 500
+#define TEXT_ANNOTATION_FONT_HEIGHT 24
+#define TEXT_ANNOTATION_LINE_HEIGHT 30
+#define TEXT_ANNOTATION_MIN_WIDTH 48
+#define TEXT_ANNOTATION_PADDING_X 14
+#define TEXT_ANNOTATION_PADDING_Y 8
+#define TEXT_ANNOTATION_OVERHANG_X 18
+#define TEXT_ANNOTATION_MAX_DRAW_WIDTH 4096
+
 static HCURSOR CreateSelectionCursor(void) {
-    enum { CURSOR_SIZE = 24, CURSOR_CORE_THICKNESS = 3, CURSOR_OUTLINE_THICKNESS = 5, CURSOR_MARGIN = 1 };
+    enum { CURSOR_SIZE = 16, CURSOR_CORE_THICKNESS = 2, CURSOR_OUTLINE_THICKNESS = 3, CURSOR_MARGIN = 1 };
     enum { MASK_ROW_BYTES = ((CURSOR_SIZE + 15) / 16) * 2 };
     BITMAPINFO bmi;
     void* bits = NULL;
@@ -48,8 +81,10 @@ static HCURSOR CreateSelectionCursor(void) {
     BYTE maskBits[MASK_ROW_BYTES * CURSOR_SIZE];
     DWORD* pixels;
     int center = CURSOR_SIZE / 2;
-    int halfCoreThickness = CURSOR_CORE_THICKNESS / 2;
-    int halfOutlineThickness = CURSOR_OUTLINE_THICKNESS / 2;
+    int coreStart = (CURSOR_SIZE - CURSOR_CORE_THICKNESS) / 2;
+    int coreEnd = coreStart + CURSOR_CORE_THICKNESS;
+    int outlineStart = (CURSOR_SIZE - CURSOR_OUTLINE_THICKNESS) / 2;
+    int outlineEnd = outlineStart + CURSOR_OUTLINE_THICKNESS;
 
     ZeroMemory(&bmi, sizeof(bmi));
     bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -76,10 +111,10 @@ static HCURSOR CreateSelectionCursor(void) {
 
     for (int y = CURSOR_MARGIN; y < CURSOR_SIZE - CURSOR_MARGIN; y++) {
         for (int x = CURSOR_MARGIN; x < CURSOR_SIZE - CURSOR_MARGIN; x++) {
-            bool onOutlineVertical = abs(x - center) <= halfOutlineThickness;
-            bool onOutlineHorizontal = abs(y - center) <= halfOutlineThickness;
-            bool onCoreVertical = abs(x - center) <= halfCoreThickness;
-            bool onCoreHorizontal = abs(y - center) <= halfCoreThickness;
+            bool onOutlineVertical = (x >= outlineStart && x < outlineEnd);
+            bool onOutlineHorizontal = (y >= outlineStart && y < outlineEnd);
+            bool onCoreVertical = (x >= coreStart && x < coreEnd);
+            bool onCoreHorizontal = (y >= coreStart && y < coreEnd);
             if (onOutlineVertical || onOutlineHorizontal) {
                 pixels[y * CURSOR_SIZE + x] =
                     (onCoreVertical || onCoreHorizontal) ? 0xFF000000 : 0xFFFFFFFF;
@@ -115,6 +150,17 @@ bool ScreenshotOverlayInit(void) {
 
     LOG_DEBUG("[选区窗口] 开始初始化...");
 
+    if (!g_gdiplusReady) {
+        GdiplusStartupInput gdiplusInput;
+        ZeroMemory(&gdiplusInput, sizeof(gdiplusInput));
+        gdiplusInput.GdiplusVersion = 1;
+        if (GdiplusStartup(&g_gdiplusToken, &gdiplusInput, NULL) == Ok) {
+            g_gdiplusReady = true;
+        } else {
+            LOG_WARN("[overlay] GDI+ init failed, falling back to GDI annotation drawing");
+        }
+    }
+
     if (g_overlay.crossCursor == NULL) {
         g_overlay.crossCursor = CreateSelectionCursor();
     }
@@ -123,8 +169,8 @@ bool ScreenshotOverlayInit(void) {
     }
 
     // 注册窗口类
-    WNDCLASSEXA wc = {0};
-    wc.cbSize = sizeof(WNDCLASSEXA);
+    WNDCLASSEXW wc = {0};
+    wc.cbSize = sizeof(WNDCLASSEXW);
     wc.style = CS_HREDRAW | CS_VREDRAW;
     wc.lpfnWndProc = OverlayWndProc;
     wc.hInstance = GetModuleHandle(NULL);
@@ -132,7 +178,7 @@ bool ScreenshotOverlayInit(void) {
     wc.hbrBackground = NULL;
     wc.lpszClassName = WINDOW_CLASS;
 
-    if (!RegisterClassExA(&wc)) {
+    if (!RegisterClassExW(&wc)) {
         DWORD error = GetLastError();
         if (error != ERROR_CLASS_ALREADY_EXISTS) {
             LOG_ERROR("[选区窗口] 注册窗口类失败: %d", error);
@@ -172,6 +218,12 @@ void ScreenshotOverlayCleanup(void) {
         g_overlay.screenImage = NULL;
     }
 
+    if (g_gdiplusReady) {
+        GdiplusShutdown(g_gdiplusToken);
+        g_gdiplusToken = 0;
+        g_gdiplusReady = false;
+    }
+
     g_initialized = false;
     LOG_INFO("[选区窗口] 模块已清理");
 }
@@ -205,10 +257,10 @@ bool ScreenshotOverlayShow(void) {
     }
 
     // 创建窗口
-    g_overlay.hwnd = CreateWindowExA(
+    g_overlay.hwnd = CreateWindowExW(
         WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED | WS_EX_NOACTIVATE,
         WINDOW_CLASS,
-        "ScreenshotOverlay",
+        L"ScreenshotOverlay",
         WS_POPUP,
         x, y, width, height,
         NULL, NULL, GetModuleHandle(NULL), NULL);
@@ -327,9 +379,11 @@ void ScreenshotOverlaySetAnnotationTool(OverlayAnnotateTool tool) {
         tool = OVERLAY_ANNOTATE_NONE;
     }
 
+    if (g_overlay.isEditingText) {
+        CommitTextEdit(&g_overlay);
+    }
     g_overlay.annotateTool = tool;
     g_overlay.isDrawingAnnotation = false;
-    CancelTextEdit(&g_overlay);
 
     if (g_overlay.hwnd != NULL) {
         SetCursor(g_overlay.crossCursor);
@@ -424,29 +478,43 @@ static void ResetAnnotations(OverlayContext* ctx) {
     ctx->isEditingText = false;
     ctx->editingTextLen = 0;
     ctx->editingText[0] = L'\0';
+    ctx->editingAnnotationIndex = -1;
+    ctx->editingCaretIndex = 0;
+    if (ctx->hwnd != NULL) {
+        KillTimer(ctx->hwnd, TEXT_CARET_TIMER_ID);
+    }
     ZeroMemory(&ctx->currentAnnotation, sizeof(ctx->currentAnnotation));
 }
 
 static void StartAnnotation(OverlayContext* ctx, POINT pt) {
+    int textIndex;
+
     if (ctx == NULL || ctx->annotateTool == OVERLAY_ANNOTATE_NONE || !PointInSelection(ctx, pt)) {
         return;
     }
 
-    CancelTextEdit(ctx);
+    if (ctx->isEditingText) {
+        CommitTextEdit(ctx);
+    }
+
+    if (ctx->annotateTool == OVERLAY_ANNOTATE_TEXT) {
+        textIndex = HitTestTextAnnotation(ctx, pt);
+        if (textIndex >= 0) {
+            BeginTextEdit(ctx,
+                          ctx->annotations[textIndex].startPoint,
+                          ctx->annotations[textIndex].text,
+                          textIndex,
+                          GetTextCaretIndexFromPoint(&ctx->annotations[textIndex], pt));
+        } else {
+            BeginTextEdit(ctx, TextOriginFromClick(pt), L"", -1, 0);
+        }
+        return;
+    }
+
     ZeroMemory(&ctx->currentAnnotation, sizeof(ctx->currentAnnotation));
     ctx->currentAnnotation.tool = ctx->annotateTool;
     ctx->currentAnnotation.startPoint = pt;
     ctx->currentAnnotation.endPoint = pt;
-
-    if (ctx->annotateTool == OVERLAY_ANNOTATE_TEXT) {
-        ctx->isEditingText = true;
-        ctx->textAnchor = pt;
-        ctx->editingTextLen = 0;
-        ctx->editingText[0] = L'\0';
-        SetFocus(ctx->hwnd);
-        InvalidateRect(ctx->hwnd, NULL, FALSE);
-        return;
-    }
 
     ctx->isDrawingAnnotation = true;
     if (ctx->annotateTool == OVERLAY_ANNOTATE_PENCIL) {
@@ -512,6 +580,11 @@ static void CancelTextEdit(OverlayContext* ctx) {
     ctx->isEditingText = false;
     ctx->editingTextLen = 0;
     ctx->editingText[0] = L'\0';
+    ctx->editingAnnotationIndex = -1;
+    ctx->editingCaretIndex = 0;
+    if (ctx->hwnd != NULL) {
+        KillTimer(ctx->hwnd, TEXT_CARET_TIMER_ID);
+    }
 }
 
 static void CommitTextEdit(OverlayContext* ctx) {
@@ -521,7 +594,19 @@ static void CommitTextEdit(OverlayContext* ctx) {
         return;
     }
 
-    if (ctx->editingTextLen > 0 && ctx->annotationCount < OVERLAY_MAX_ANNOTATIONS) {
+    if (ctx->editingAnnotationIndex >= 0 &&
+        ctx->editingAnnotationIndex < ctx->annotationCount) {
+        if (ctx->editingTextLen > 0) {
+            ctx->annotations[ctx->editingAnnotationIndex].startPoint = ctx->textAnchor;
+            ctx->annotations[ctx->editingAnnotationIndex].endPoint = ctx->textAnchor;
+            wcsncpy(ctx->annotations[ctx->editingAnnotationIndex].text,
+                    ctx->editingText,
+                    OVERLAY_TEXT_MAX - 1);
+            ctx->annotations[ctx->editingAnnotationIndex].text[OVERLAY_TEXT_MAX - 1] = L'\0';
+        } else {
+            RemoveAnnotationAt(ctx, ctx->editingAnnotationIndex);
+        }
+    } else if (ctx->editingTextLen > 0 && ctx->annotationCount < OVERLAY_MAX_ANNOTATIONS) {
         ZeroMemory(&annotation, sizeof(annotation));
         annotation.tool = OVERLAY_ANNOTATE_TEXT;
         annotation.startPoint = ctx->textAnchor;
@@ -536,6 +621,334 @@ static void CommitTextEdit(OverlayContext* ctx) {
     if (ctx->hwnd != NULL) {
         InvalidateRect(ctx->hwnd, NULL, FALSE);
     }
+}
+
+static void AppendEditingText(OverlayContext* ctx, const WCHAR* text, int len) {
+    int insertCount = 0;
+
+    if (ctx == NULL || text == NULL || len <= 0 || !ctx->isEditingText) {
+        return;
+    }
+
+    if (ctx->editingCaretIndex < 0) {
+        ctx->editingCaretIndex = 0;
+    }
+    if (ctx->editingCaretIndex > ctx->editingTextLen) {
+        ctx->editingCaretIndex = ctx->editingTextLen;
+    }
+
+    for (int i = 0; i < len && ctx->editingTextLen + insertCount < OVERLAY_TEXT_MAX - 1; i++) {
+        WCHAR ch = text[i];
+        if (ch == L'\0') {
+            break;
+        }
+        if (ch == L'\r' || ch == L'\n' || ch == VK_ESCAPE) {
+            continue;
+        }
+        if (ch >= 32) {
+            insertCount++;
+        }
+    }
+
+    if (insertCount <= 0) {
+        return;
+    }
+
+    memmove(ctx->editingText + ctx->editingCaretIndex + insertCount,
+            ctx->editingText + ctx->editingCaretIndex,
+            (size_t)(ctx->editingTextLen - ctx->editingCaretIndex + 1) * sizeof(WCHAR));
+
+    insertCount = 0;
+    for (int i = 0; i < len && ctx->editingTextLen + insertCount < OVERLAY_TEXT_MAX - 1; i++) {
+        WCHAR ch = text[i];
+        if (ch == L'\0') {
+            break;
+        }
+        if (ch == L'\r' || ch == L'\n' || ch == VK_ESCAPE) {
+            continue;
+        }
+        if (ch >= 32) {
+            ctx->editingText[ctx->editingCaretIndex + insertCount++] = ch;
+        }
+    }
+
+    ctx->editingTextLen += insertCount;
+    ctx->editingCaretIndex += insertCount;
+    ctx->editingText[ctx->editingTextLen] = L'\0';
+}
+
+static HFONT CreateTextAnnotationFont(void) {
+    return CreateFontW(TEXT_ANNOTATION_FONT_HEIGHT, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+                       DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                       CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Microsoft YaHei UI");
+}
+
+static POINT TextOriginFromClick(POINT pt) {
+    POINT origin = pt;
+    origin.y -= TEXT_ANNOTATION_LINE_HEIGHT;
+    if (origin.y < g_overlay.selection.y) {
+        origin.y = g_overlay.selection.y;
+    }
+    return origin;
+}
+
+static int CeilReal(REAL value) {
+    int rounded;
+
+    if (value <= 0.0f) {
+        return 0;
+    }
+
+    rounded = (int)value;
+    if ((REAL)rounded < value) {
+        rounded++;
+    }
+    return rounded;
+}
+
+static SIZE MeasureTextSize(const WCHAR* text, int len) {
+    SIZE textSize = {0};
+    HDC hdc;
+    HFONT font;
+    HFONT oldFont;
+
+    if (text == NULL || len <= 0) {
+        return textSize;
+    }
+
+    hdc = GetDC(NULL);
+    if (g_gdiplusReady && hdc != NULL) {
+        GpGraphics* graphics = NULL;
+        GpFont* gpFont = NULL;
+        LOGFONTW lf;
+        RectF layout;
+        RectF bounds;
+
+        ZeroMemory(&lf, sizeof(lf));
+        lf.lfHeight = -TEXT_ANNOTATION_FONT_HEIGHT;
+        lf.lfWeight = FW_BOLD;
+        lf.lfCharSet = DEFAULT_CHARSET;
+        lf.lfQuality = CLEARTYPE_QUALITY;
+        wcsncpy(lf.lfFaceName, L"Microsoft YaHei UI", LF_FACESIZE - 1);
+
+        if (GdipCreateFromHDC(hdc, &graphics) == Ok && graphics != NULL &&
+            GdipCreateFontFromLogfontW(hdc, &lf, &gpFont) == Ok && gpFont != NULL) {
+            ZeroMemory(&layout, sizeof(layout));
+            ZeroMemory(&bounds, sizeof(bounds));
+            layout.X = 0.0f;
+            layout.Y = 0.0f;
+            layout.Width = (REAL)TEXT_ANNOTATION_MAX_DRAW_WIDTH;
+            layout.Height = (REAL)(TEXT_ANNOTATION_LINE_HEIGHT + TEXT_ANNOTATION_PADDING_Y * 2);
+            GdipSetTextRenderingHint(graphics, TextRenderingHintClearTypeGridFit);
+            if (GdipMeasureString(graphics, text, len, gpFont, &layout, NULL, &bounds, NULL, NULL) == Ok) {
+                textSize.cx = CeilReal(bounds.X + bounds.Width);
+                textSize.cy = CeilReal(bounds.Y + bounds.Height);
+            }
+        }
+
+        if (gpFont != NULL) {
+            GdipDeleteFont(gpFont);
+        }
+        if (graphics != NULL) {
+            GdipDeleteGraphics(graphics);
+        }
+    }
+
+    font = CreateTextAnnotationFont();
+    if ((textSize.cx <= 0 || textSize.cy <= 0) && hdc != NULL && font != NULL) {
+        oldFont = (HFONT)SelectObject(hdc, font);
+        GetTextExtentPoint32W(hdc, text, len, &textSize);
+        SelectObject(hdc, oldFont);
+    }
+    if (font != NULL) {
+        DeleteObject(font);
+    }
+    if (hdc != NULL) {
+        ReleaseDC(NULL, hdc);
+    }
+
+    return textSize;
+}
+
+static int MeasureTextWidth(const WCHAR* text, int len) {
+    return MeasureTextSize(text, len).cx;
+}
+
+static RECT GetTextAnnotationRect(const OverlayAnnotation* annotation) {
+    RECT rect = {0};
+    SIZE textSize;
+    int textWidth;
+    int textHeight;
+
+    if (annotation == NULL || annotation->tool != OVERLAY_ANNOTATE_TEXT) {
+        return rect;
+    }
+
+    textSize = MeasureTextSize(annotation->text, (int)wcslen(annotation->text));
+    textWidth = textSize.cx;
+    textHeight = textSize.cy;
+    if (textWidth < TEXT_ANNOTATION_MIN_WIDTH) {
+        textWidth = TEXT_ANNOTATION_MIN_WIDTH;
+    }
+    if (textHeight < TEXT_ANNOTATION_LINE_HEIGHT) {
+        textHeight = TEXT_ANNOTATION_LINE_HEIGHT;
+    }
+
+    rect.left = annotation->startPoint.x - TEXT_ANNOTATION_PADDING_X - TEXT_ANNOTATION_OVERHANG_X;
+    rect.top = annotation->startPoint.y - TEXT_ANNOTATION_PADDING_Y;
+    rect.right = annotation->startPoint.x + textWidth + TEXT_ANNOTATION_PADDING_X + TEXT_ANNOTATION_OVERHANG_X;
+    rect.bottom = annotation->startPoint.y + textHeight + TEXT_ANNOTATION_PADDING_Y;
+    return rect;
+}
+
+static int GetTextCaretIndexFromPoint(const OverlayAnnotation* annotation, POINT pt) {
+    int len;
+    int relativeX;
+    int previousWidth = 0;
+    int bestIndex = 0;
+    int bestDistance = 0x7fffffff;
+
+    if (annotation == NULL || annotation->tool != OVERLAY_ANNOTATE_TEXT) {
+        return 0;
+    }
+
+    len = (int)wcslen(annotation->text);
+    relativeX = pt.x - annotation->startPoint.x;
+    if (relativeX <= 0) {
+        return 0;
+    }
+
+    for (int i = 1; i <= len; i++) {
+        int currentWidth = MeasureTextWidth(annotation->text, i);
+        int center = previousWidth + (currentWidth - previousWidth) / 2;
+        int distance = abs(relativeX - center);
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            bestIndex = i;
+        }
+        previousWidth = currentWidth;
+    }
+
+    return bestIndex;
+}
+
+static int HitTestTextAnnotation(const OverlayContext* ctx, POINT pt) {
+    if (ctx == NULL) {
+        return -1;
+    }
+
+    for (int i = ctx->annotationCount - 1; i >= 0; i--) {
+        RECT rect;
+        if (ctx->annotations[i].tool != OVERLAY_ANNOTATE_TEXT) {
+            continue;
+        }
+        rect = GetTextAnnotationRect(&ctx->annotations[i]);
+        if (PtInRect(&rect, pt)) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static void RemoveAnnotationAt(OverlayContext* ctx, int index) {
+    if (ctx == NULL || index < 0 || index >= ctx->annotationCount) {
+        return;
+    }
+
+    for (int i = index; i < ctx->annotationCount - 1; i++) {
+        ctx->annotations[i] = ctx->annotations[i + 1];
+    }
+    ctx->annotationCount--;
+}
+
+static void BeginTextEdit(OverlayContext* ctx, POINT origin, const WCHAR* initialText, int annotationIndex, int caretIndex) {
+    if (ctx == NULL) {
+        return;
+    }
+
+    ctx->isEditingText = true;
+    ctx->textAnchor = origin;
+    ctx->editingAnnotationIndex = annotationIndex;
+    ctx->editingTextLen = 0;
+    ctx->editingText[0] = L'\0';
+    if (initialText != NULL && initialText[0] != L'\0') {
+        wcsncpy(ctx->editingText, initialText, OVERLAY_TEXT_MAX - 1);
+        ctx->editingText[OVERLAY_TEXT_MAX - 1] = L'\0';
+        ctx->editingTextLen = (int)wcslen(ctx->editingText);
+    }
+    if (caretIndex < 0) {
+        caretIndex = 0;
+    }
+    if (caretIndex > ctx->editingTextLen) {
+        caretIndex = ctx->editingTextLen;
+    }
+    ctx->editingCaretIndex = caretIndex;
+
+    SetTimer(ctx->hwnd, TEXT_CARET_TIMER_ID, TEXT_CARET_BLINK_MS, NULL);
+    SetFocus(ctx->hwnd);
+    InvalidateRect(ctx->hwnd, NULL, FALSE);
+}
+
+static void DeleteTextBeforeCaret(OverlayContext* ctx) {
+    if (ctx == NULL || !ctx->isEditingText || ctx->editingCaretIndex <= 0) {
+        return;
+    }
+
+    if (ctx->editingCaretIndex > ctx->editingTextLen) {
+        ctx->editingCaretIndex = ctx->editingTextLen;
+    }
+
+    memmove(ctx->editingText + ctx->editingCaretIndex - 1,
+            ctx->editingText + ctx->editingCaretIndex,
+            (size_t)(ctx->editingTextLen - ctx->editingCaretIndex + 1) * sizeof(WCHAR));
+    ctx->editingTextLen--;
+    ctx->editingCaretIndex--;
+}
+
+static void DeleteTextAtCaret(OverlayContext* ctx) {
+    if (ctx == NULL || !ctx->isEditingText ||
+        ctx->editingCaretIndex < 0 ||
+        ctx->editingCaretIndex >= ctx->editingTextLen) {
+        return;
+    }
+
+    memmove(ctx->editingText + ctx->editingCaretIndex,
+            ctx->editingText + ctx->editingCaretIndex + 1,
+            (size_t)(ctx->editingTextLen - ctx->editingCaretIndex) * sizeof(WCHAR));
+    ctx->editingTextLen--;
+}
+
+static bool HandleImeComposition(HWND hwnd, LPARAM lParam) {
+    HIMC himc;
+    LONG byteCount;
+    WCHAR* buffer;
+    bool handled = false;
+
+    if (!g_overlay.isEditingText || (lParam & GCS_RESULTSTR) == 0) {
+        return false;
+    }
+
+    himc = ImmGetContext(hwnd);
+    if (himc == NULL) {
+        return false;
+    }
+
+    byteCount = ImmGetCompositionStringW(himc, GCS_RESULTSTR, NULL, 0);
+    if (byteCount > 0) {
+        buffer = (WCHAR*)calloc((size_t)byteCount + sizeof(WCHAR), 1);
+        if (buffer != NULL) {
+            LONG copied = ImmGetCompositionStringW(himc, GCS_RESULTSTR, buffer, (DWORD)byteCount);
+            if (copied > 0) {
+                AppendEditingText(&g_overlay, buffer, copied / (LONG)sizeof(WCHAR));
+                InvalidateRect(hwnd, NULL, FALSE);
+                handled = true;
+            }
+            free(buffer);
+        }
+    }
+
+    ImmReleaseContext(hwnd, himc);
+    return handled;
 }
 
 static void DrawOverlay(HDC hdc, OverlayContext* ctx) {
@@ -572,19 +985,19 @@ static void DrawOverlay(HDC hdc, OverlayContext* ctx) {
     RECT maskRect = clientRect;
     FillRect(hdcMask, &maskRect, (HBRUSH)GetStockObject(BLACK_BRUSH));
 
-    // 如果有选区，清除选区内的遮罩
-    if (hasSelection) {
-        RECT selRect;
-        selRect.left = ctx->selection.x;
-        selRect.top = ctx->selection.y;
-        selRect.right = ctx->selection.x + ctx->selection.width;
-        selRect.bottom = ctx->selection.y + ctx->selection.height;
-        FillRect(hdcMask, &selRect, (HBRUSH)GetStockObject(WHITE_BRUSH));
-    }
-
     // 混合遮罩层
     AlphaBlend(hdcMem, 0, 0, clientRect.right, clientRect.bottom,
                hdcMask, 0, 0, clientRect.right, clientRect.bottom, blend);
+
+    // 选区内不叠加白色半透明层，保留原图 100% 可见，避免文字和图标被洗白。
+    if (hasSelection && ctx->screenDC != NULL) {
+        BitBlt(hdcMem,
+               ctx->selection.x, ctx->selection.y,
+               ctx->selection.width, ctx->selection.height,
+               ctx->screenDC,
+               ctx->selection.x, ctx->selection.y,
+               SRCCOPY);
+    }
 
     // 清理遮罩资源
     SelectObject(hdcMask, hOldMask);
@@ -684,7 +1097,14 @@ static void DrawAnnotations(HDC hdc, OverlayContext* ctx) {
     IntersectClipRect(hdc, selRect.left, selRect.top, selRect.right, selRect.bottom);
 
     for (int i = 0; i < ctx->annotationCount; i++) {
+        if (ctx->isEditingText && i == ctx->editingAnnotationIndex) {
+            continue;
+        }
         DrawAnnotation(hdc, &ctx->annotations[i], 0, 0);
+    }
+
+    if (ctx->annotateTool == OVERLAY_ANNOTATE_TEXT) {
+        DrawTextAnnotationBoxes(hdc, ctx);
     }
 
     if (ctx->isDrawingAnnotation) {
@@ -692,19 +1112,93 @@ static void DrawAnnotations(HDC hdc, OverlayContext* ctx) {
     }
 
     if (ctx->isEditingText) {
-        OverlayAnnotation textPreview;
-        ZeroMemory(&textPreview, sizeof(textPreview));
-        textPreview.tool = OVERLAY_ANNOTATE_TEXT;
-        textPreview.startPoint = ctx->textAnchor;
         if (ctx->editingTextLen > 0) {
+            OverlayAnnotation textPreview;
+            ZeroMemory(&textPreview, sizeof(textPreview));
+            textPreview.tool = OVERLAY_ANNOTATE_TEXT;
+            textPreview.startPoint = ctx->textAnchor;
             wcsncpy(textPreview.text, ctx->editingText, OVERLAY_TEXT_MAX - 1);
-        } else {
-            wcsncpy(textPreview.text, L"_", OVERLAY_TEXT_MAX - 1);
+            DrawAnnotation(hdc, &textPreview, 0, 0);
         }
-        DrawAnnotation(hdc, &textPreview, 0, 0);
+        DrawTextCaret(hdc, ctx);
     }
 
     RestoreDC(hdc, saved);
+}
+
+static void DrawTextAnnotationBoxes(HDC hdc, const OverlayContext* ctx) {
+    HPEN pen;
+    HPEN oldPen;
+    HBRUSH oldBrush;
+
+    if (hdc == NULL || ctx == NULL) {
+        return;
+    }
+
+    pen = CreatePen(PS_DASH, 1, RGB(255, 64, 64));
+    oldPen = (HPEN)SelectObject(hdc, pen);
+    oldBrush = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
+
+    for (int i = 0; i < ctx->annotationCount; i++) {
+        RECT rect;
+        if (ctx->annotations[i].tool != OVERLAY_ANNOTATE_TEXT) {
+            continue;
+        }
+        rect = GetTextAnnotationRect(&ctx->annotations[i]);
+        Rectangle(hdc, rect.left, rect.top, rect.right, rect.bottom);
+    }
+
+    SelectObject(hdc, oldBrush);
+    SelectObject(hdc, oldPen);
+    DeleteObject(pen);
+}
+
+static void DrawTextCaret(HDC hdc, const OverlayContext* ctx) {
+    HFONT font;
+    HFONT oldFont;
+    HPEN pen;
+    HPEN oldPen;
+    int textWidth = 0;
+    int x;
+    int y;
+
+    if (hdc == NULL || ctx == NULL || !ctx->isEditingText) {
+        return;
+    }
+
+    if (((GetTickCount() / TEXT_CARET_BLINK_MS) % 2) == 0) {
+        return;
+    }
+
+    font = CreateTextAnnotationFont();
+    if (font == NULL) {
+        return;
+    }
+    oldFont = (HFONT)SelectObject(hdc, font);
+    if (ctx->editingCaretIndex > 0) {
+        int len = ctx->editingCaretIndex;
+        if (len > ctx->editingTextLen) {
+            len = ctx->editingTextLen;
+        }
+        textWidth = MeasureTextWidth(ctx->editingText, len);
+    }
+
+    x = ctx->textAnchor.x + textWidth + 2;
+    y = ctx->textAnchor.y;
+
+    pen = CreatePen(PS_SOLID, 2, RGB(255, 64, 64));
+    oldPen = (HPEN)SelectObject(hdc, pen);
+    MoveToEx(hdc, x, y, NULL);
+    LineTo(hdc, x, y + 25);
+    MoveToEx(hdc, x - 3, y, NULL);
+    LineTo(hdc, x + 3, y);
+    MoveToEx(hdc, x - 3, y + 25, NULL);
+    LineTo(hdc, x + 3, y + 25);
+    SelectObject(hdc, oldPen);
+    DeleteObject(pen);
+
+    SelectObject(hdc, oldFont);
+    DeleteObject(font);
 }
 
 static void DrawAnnotation(HDC hdc, const OverlayAnnotation* annotation, int offsetX, int offsetY) {
@@ -718,6 +1212,10 @@ static void DrawAnnotation(HDC hdc, const OverlayAnnotation* annotation, int off
     RECT rect;
 
     if (hdc == NULL || annotation == NULL || annotation->tool == OVERLAY_ANNOTATE_NONE) {
+        return;
+    }
+
+    if (DrawAnnotationGdiPlus(hdc, annotation, offsetX, offsetY)) {
         return;
     }
 
@@ -751,14 +1249,15 @@ static void DrawAnnotation(HDC hdc, const OverlayAnnotation* annotation, int off
             }
             break;
         case OVERLAY_ANNOTATE_TEXT:
-            font = CreateFontW(24, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
-                               DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                               CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Microsoft YaHei UI");
+            font = CreateTextAnnotationFont();
+            if (font == NULL) {
+                break;
+            }
             oldFont = (HFONT)SelectObject(hdc, font);
             rect.left = start.x;
             rect.top = start.y;
-            rect.right = start.x + 400;
-            rect.bottom = start.y + 40;
+            rect.right = start.x + TEXT_ANNOTATION_MAX_DRAW_WIDTH;
+            rect.bottom = start.y + TEXT_ANNOTATION_LINE_HEIGHT + TEXT_ANNOTATION_PADDING_Y * 2;
             DrawTextW(hdc, annotation->text, -1, &rect, DT_LEFT | DT_TOP | DT_SINGLELINE);
             SelectObject(hdc, oldFont);
             DeleteObject(font);
@@ -770,6 +1269,164 @@ static void DrawAnnotation(HDC hdc, const OverlayAnnotation* annotation, int off
     SelectObject(hdc, oldBrush);
     SelectObject(hdc, oldPen);
     DeleteObject(pen);
+}
+
+static void NormalizeRectPoints(POINT start, POINT end, int* x, int* y, int* width, int* height) {
+    int left = start.x < end.x ? start.x : end.x;
+    int top = start.y < end.y ? start.y : end.y;
+    int right = start.x > end.x ? start.x : end.x;
+    int bottom = start.y > end.y ? start.y : end.y;
+
+    *x = left;
+    *y = top;
+    *width = right - left;
+    *height = bottom - top;
+}
+
+static bool DrawAnnotationGdiPlus(HDC hdc, const OverlayAnnotation* annotation, int offsetX, int offsetY) {
+    static const ARGB ANNOTATION_COLOR = 0xFFFF4040;
+    GpGraphics* graphics = NULL;
+    GpPen* pen = NULL;
+    GpSolidFill* brush = NULL;
+    GpFont* font = NULL;
+    POINT start;
+    POINT end;
+    int x;
+    int y;
+    int width;
+    int height;
+    bool drawn = false;
+
+    if (!g_gdiplusReady || hdc == NULL || annotation == NULL ||
+        annotation->tool == OVERLAY_ANNOTATE_NONE) {
+        return false;
+    }
+
+    if (GdipCreateFromHDC(hdc, &graphics) != Ok || graphics == NULL) {
+        return false;
+    }
+
+    if (GdipCreatePen1(ANNOTATION_COLOR, 3.0f, UnitPixel, &pen) != Ok ||
+        GdipCreateSolidFill(ANNOTATION_COLOR, &brush) != Ok) {
+        goto cleanup;
+    }
+
+    GdipSetSmoothingMode(graphics, SmoothingModeAntiAlias8x8);
+    GdipSetPixelOffsetMode(graphics, PixelOffsetModeHalf);
+    GdipSetTextRenderingHint(graphics, TextRenderingHintClearTypeGridFit);
+    GdipSetPenStartCap(pen, LineCapRound);
+    GdipSetPenEndCap(pen, LineCapRound);
+    GdipSetPenLineJoin(pen, LineJoinRound);
+
+    start.x = annotation->startPoint.x - offsetX;
+    start.y = annotation->startPoint.y - offsetY;
+    end.x = annotation->endPoint.x - offsetX;
+    end.y = annotation->endPoint.y - offsetY;
+
+    switch (annotation->tool) {
+        case OVERLAY_ANNOTATE_RECT:
+            NormalizeRectPoints(start, end, &x, &y, &width, &height);
+            if (width > 0 && height > 0) {
+                GdipDrawRectangleI(graphics, pen, x, y, width, height);
+                drawn = true;
+            }
+            break;
+        case OVERLAY_ANNOTATE_CIRCLE:
+            NormalizeRectPoints(start, end, &x, &y, &width, &height);
+            if (width > 0 && height > 0) {
+                GdipDrawEllipseI(graphics, pen, x, y, width, height);
+                drawn = true;
+            }
+            break;
+        case OVERLAY_ANNOTATE_ARROW:
+            DrawArrowGdiPlus(graphics, pen, (GpBrush*)brush, start, end);
+            drawn = true;
+            break;
+        case OVERLAY_ANNOTATE_PENCIL:
+            if (annotation->pointCount > 1) {
+                GpPoint points[OVERLAY_MAX_PENCIL_POINTS];
+                int count = annotation->pointCount;
+                if (count > OVERLAY_MAX_PENCIL_POINTS) {
+                    count = OVERLAY_MAX_PENCIL_POINTS;
+                }
+                for (int i = 0; i < count; i++) {
+                    points[i].X = annotation->points[i].x - offsetX;
+                    points[i].Y = annotation->points[i].y - offsetY;
+                }
+                GdipDrawLinesI(graphics, pen, points, count);
+                drawn = true;
+            }
+            break;
+        case OVERLAY_ANNOTATE_TEXT: {
+            LOGFONTW lf;
+            RectF layout;
+
+            ZeroMemory(&lf, sizeof(lf));
+            lf.lfHeight = -24;
+            lf.lfWeight = FW_BOLD;
+            lf.lfCharSet = DEFAULT_CHARSET;
+            lf.lfQuality = CLEARTYPE_QUALITY;
+            wcsncpy(lf.lfFaceName, L"Microsoft YaHei UI", LF_FACESIZE - 1);
+
+            if (GdipCreateFontFromLogfontW(hdc, &lf, &font) == Ok && font != NULL) {
+                layout.X = (REAL)start.x;
+                layout.Y = (REAL)start.y;
+                layout.Width = (REAL)TEXT_ANNOTATION_MAX_DRAW_WIDTH;
+                layout.Height = (REAL)(TEXT_ANNOTATION_LINE_HEIGHT + TEXT_ANNOTATION_PADDING_Y * 2);
+                GdipDrawString(graphics, annotation->text, -1, font, &layout, NULL, (GpBrush*)brush);
+                drawn = true;
+            }
+            break;
+        }
+        default:
+            break;
+    }
+
+cleanup:
+    if (font != NULL) {
+        GdipDeleteFont(font);
+    }
+    if (brush != NULL) {
+        GdipDeleteBrush((GpBrush*)brush);
+    }
+    if (pen != NULL) {
+        GdipDeletePen(pen);
+    }
+    if (graphics != NULL) {
+        GdipDeleteGraphics(graphics);
+    }
+
+    return drawn;
+}
+
+static void DrawArrowGdiPlus(GpGraphics* graphics, GpPen* pen, GpBrush* brush, POINT start, POINT end) {
+    int dx = end.x - start.x;
+    int dy = end.y - start.y;
+    int len = abs(dx) > abs(dy) ? abs(dx) : abs(dy);
+    int baseX;
+    int baseY;
+    int perpX;
+    int perpY;
+    GpPoint head[3];
+
+    if (graphics == NULL || pen == NULL || brush == NULL || len < 1) {
+        return;
+    }
+
+    baseX = end.x - dx * 16 / len;
+    baseY = end.y - dy * 16 / len;
+    perpX = -dy * 7 / len;
+    perpY = dx * 7 / len;
+
+    head[0].X = end.x;
+    head[0].Y = end.y;
+    head[1].X = baseX + perpX;
+    head[1].Y = baseY + perpY;
+    head[2].X = baseX - perpX;
+    head[2].Y = baseY - perpY;
+
+    GdipDrawLineI(graphics, pen, start.x, start.y, end.x, end.y);
+    GdipFillPolygonI(graphics, brush, head, 3, FillModeAlternate);
 }
 
 static void DrawArrow(HDC hdc, POINT start, POINT end) {
@@ -832,6 +1489,9 @@ static void ApplyAnnotationsToImage(ScreenshotImage* image, const ScreenshotRect
     SetDIBits(hdcMem, image->hBitmap, 0, image->height, image->pixels, &bmi, DIB_RGB_COLORS);
 
     for (int i = 0; i < g_overlay.annotationCount; i++) {
+        if (g_overlay.isEditingText && i == g_overlay.editingAnnotationIndex) {
+            continue;
+        }
         DrawAnnotation(hdcMem, &g_overlay.annotations[i], selection->x, selection->y);
     }
 
@@ -1056,20 +1716,62 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                 CommitTextEdit(&g_overlay);
                 return 0;
             }
+            if (g_overlay.isEditingText) {
+                if (wParam == VK_LEFT) {
+                    if (g_overlay.editingCaretIndex > 0) {
+                        g_overlay.editingCaretIndex--;
+                        InvalidateRect(hwnd, NULL, FALSE);
+                    }
+                    return 0;
+                }
+                if (wParam == VK_RIGHT) {
+                    if (g_overlay.editingCaretIndex < g_overlay.editingTextLen) {
+                        g_overlay.editingCaretIndex++;
+                        InvalidateRect(hwnd, NULL, FALSE);
+                    }
+                    return 0;
+                }
+                if (wParam == VK_HOME) {
+                    g_overlay.editingCaretIndex = 0;
+                    InvalidateRect(hwnd, NULL, FALSE);
+                    return 0;
+                }
+                if (wParam == VK_END) {
+                    g_overlay.editingCaretIndex = g_overlay.editingTextLen;
+                    InvalidateRect(hwnd, NULL, FALSE);
+                    return 0;
+                }
+                if (wParam == VK_DELETE) {
+                    DeleteTextAtCaret(&g_overlay);
+                    InvalidateRect(hwnd, NULL, FALSE);
+                    return 0;
+                }
+            }
             break;
         }
+
+        case WM_TIMER:
+            if (wParam == TEXT_CARET_TIMER_ID && g_overlay.isEditingText) {
+                InvalidateRect(hwnd, NULL, FALSE);
+                return 0;
+            }
+            break;
+
+        case WM_IME_COMPOSITION:
+            if (HandleImeComposition(hwnd, lParam)) {
+                return 0;
+            }
+            break;
 
         case WM_CHAR: {
             if (g_overlay.isEditingText) {
                 if (wParam == VK_BACK) {
-                    if (g_overlay.editingTextLen > 0) {
-                        g_overlay.editingText[--g_overlay.editingTextLen] = L'\0';
-                    }
+                    DeleteTextBeforeCaret(&g_overlay);
                 } else if (wParam == VK_RETURN || wParam == VK_ESCAPE) {
                     return 0;
-                } else if (wParam >= 32 && g_overlay.editingTextLen < OVERLAY_TEXT_MAX - 1) {
-                    g_overlay.editingText[g_overlay.editingTextLen++] = (WCHAR)wParam;
-                    g_overlay.editingText[g_overlay.editingTextLen] = L'\0';
+                } else {
+                    WCHAR ch = (WCHAR)wParam;
+                    AppendEditingText(&g_overlay, &ch, 1);
                 }
                 InvalidateRect(hwnd, NULL, FALSE);
                 return 0;
@@ -1084,10 +1786,10 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             return 0;
 
         default:
-            return DefWindowProcA(hwnd, msg, wParam, lParam);
+            return DefWindowProcW(hwnd, msg, wParam, lParam);
     }
 
-    return DefWindowProcA(hwnd, msg, wParam, lParam);
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 
 int ScreenshotOverlayTest(void) {

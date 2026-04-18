@@ -57,6 +57,8 @@ typedef struct {
     POINT textAnchor;
     WCHAR editingText[OVERLAY_TEXT_MAX];
     int editingTextLen;
+    int editingAnnotationIndex;
+    int editingCaretIndex;
 
     // 窗口识别
     HWND hoveredWindow;           // 悬停的窗口
