@@ -22,12 +22,27 @@ typedef enum {
     OVERLAY_ANNOTATE_TEXT
 } OverlayAnnotateTool;
 
+typedef enum {
+    OVERLAY_RESIZE_NONE = 0,
+    OVERLAY_RESIZE_LEFT,
+    OVERLAY_RESIZE_RIGHT,
+    OVERLAY_RESIZE_TOP,
+    OVERLAY_RESIZE_BOTTOM,
+    OVERLAY_RESIZE_TOP_LEFT,
+    OVERLAY_RESIZE_TOP_RIGHT,
+    OVERLAY_RESIZE_BOTTOM_LEFT,
+    OVERLAY_RESIZE_BOTTOM_RIGHT
+} OverlayResizeHandle;
+
 #define OVERLAY_MAX_ANNOTATIONS 128
 #define OVERLAY_MAX_PENCIL_POINTS 256
 #define OVERLAY_TEXT_MAX 64
 
 typedef struct {
     OverlayAnnotateTool tool;
+    COLORREF color;
+    int lineWidth;
+    int textFontHeight;
     POINT startPoint;
     POINT endPoint;
     POINT points[OVERLAY_MAX_PENCIL_POINTS];
@@ -53,12 +68,26 @@ typedef struct {
     int annotationCount;
     bool isDrawingAnnotation;
     bool isEditingText;
+    bool isResizingSelection;
+    bool isSelectingText;
+    COLORREF currentAnnotationColor;
+    int currentLineWidth;
+    int currentTextFontHeight;
     OverlayAnnotation currentAnnotation;
+    OverlayResizeHandle resizeHandle;
+    OverlayResizeHandle hoverResizeHandle;
+    ScreenshotRect resizeStartSelection;
+    POINT resizeStartPoint;
     POINT textAnchor;
     WCHAR editingText[OVERLAY_TEXT_MAX];
     int editingTextLen;
     int editingAnnotationIndex;
     int editingCaretIndex;
+    COLORREF editingTextColor;
+    int editingTextFontHeight;
+    int textSelectionAnchor;
+    int textSelectionStart;
+    int textSelectionEnd;
 
     // 窗口识别
     HWND hoveredWindow;           // 悬停的窗口
@@ -89,6 +118,10 @@ ScreenshotImage* ScreenshotOverlayGetSelectionImage(void);
 ScreenshotImage* ScreenshotOverlayGetAnnotatedSelectionImage(void);
 void ScreenshotOverlaySetAnnotationTool(OverlayAnnotateTool tool);
 OverlayAnnotateTool ScreenshotOverlayGetAnnotationTool(void);
+void ScreenshotOverlaySetAnnotationColor(COLORREF color);
+COLORREF ScreenshotOverlayGetAnnotationColor(void);
+void ScreenshotOverlaySetTextFontHeight(int fontHeight);
+int ScreenshotOverlayGetTextFontHeight(void);
 void ScreenshotOverlayClearAnnotations(void);
 bool ScreenshotOverlayHasAnnotations(void);
 

@@ -14,6 +14,20 @@ static ToolbarCallback g_callback = NULL;
 static void* g_callbackData = NULL;
 static WCHAR g_tooltipText[128] = L"";
 
+typedef struct {
+    COLORREF color;
+    ToolbarButtonType command;
+} ToolbarColorOption;
+
+static const ToolbarColorOption g_colorOptions[] = {
+    { RGB(255, 64, 64), TOOLBAR_BTN_COLOR_RED },
+    { RGB(255, 204, 0), TOOLBAR_BTN_COLOR_YELLOW },
+    { RGB(34, 197, 94), TOOLBAR_BTN_COLOR_GREEN },
+    { RGB(59, 130, 246), TOOLBAR_BTN_COLOR_BLUE },
+    { RGB(255, 255, 255), TOOLBAR_BTN_COLOR_WHITE },
+    { RGB(0, 0, 0), TOOLBAR_BTN_COLOR_BLACK },
+};
+
 static ToolbarButton g_defaultButtons[] = {
     { TOOLBAR_BTN_SAVE,   L"\x4FDD\x5B58 (Ctrl+S)",          "save", true },
     { TOOLBAR_BTN_COPY,   L"\x590D\x5236 (Ctrl+C)",          "copy", true },
@@ -23,6 +37,9 @@ static ToolbarButton g_defaultButtons[] = {
     { TOOLBAR_BTN_PENCIL, L"\x753B\x7B14\x6807\x6CE8",       "pencil", true },
     { TOOLBAR_BTN_CIRCLE, L"\x5706\x5F62\x6807\x6CE8",       "circle", true },
     { TOOLBAR_BTN_TEXT,   L"\x6587\x5B57\x6807\x6CE8",       "text", true },
+    { TOOLBAR_BTN_COLOR,  L"\x6807\x6CE8\x989C\x8272",       "color", true },
+    { TOOLBAR_BTN_TEXT_SMALLER, L"\x6587\x5B57\x53D8\x5C0F", "text-small", true },
+    { TOOLBAR_BTN_TEXT_LARGER,  L"\x6587\x5B57\x53D8\x5927", "text-large", true },
     { TOOLBAR_BTN_CLOSE,  L"\x5173\x95ED (Esc)",             "close", true },
 };
 
@@ -30,13 +47,24 @@ static ToolbarButton g_defaultButtons[] = {
 #define BUTTON_HEIGHT 28
 #define BUTTON_MARGIN 2
 #define BUTTON_PADDING 4
+#define PALETTE_TOP_GAP 5
+#define PALETTE_BOTTOM_PADDING 6
+#define COLOR_SWATCH_SIZE 22
+#define COLOR_SWATCH_MARGIN 6
 
 static LRESULT CALLBACK ToolbarWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 static LRESULT CALLBACK TooltipWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+static int GetToolbarBaseWidth(void);
+static int GetToolbarWindowHeight(const ToolbarContext* ctx);
+static int GetToolbarWindowWidth(const ToolbarContext* ctx);
+static void ResizeToolbarWindow(ToolbarContext* ctx);
 static RECT GetButtonRect(int index);
 static int GetButtonAtPoint(ToolbarContext* ctx, int x, int y);
+static RECT GetColorSwatchRect(int index);
+static int GetColorSwatchAtPoint(ToolbarContext* ctx, int x, int y);
 static void DrawToolbar(HDC hdc, ToolbarContext* ctx);
 static void DrawRoundedButtonBackground(HDC hdc, const RECT* rect, bool hovered);
+static void DrawColorPalette(HDC hdc, ToolbarContext* ctx);
 static void DrawButtonIcon(HDC hdc, ToolbarButtonType type, const RECT* rect, COLORREF color);
 static void DrawCenteredTextIcon(HDC hdc, const wchar_t* text, const wchar_t* fontName, int fontSize, int fontWeight, const RECT* rect, COLORREF color);
 static void CreateToolbarTooltip(ToolbarContext* ctx);
@@ -47,6 +75,8 @@ static SIZE MeasureTooltipText(const wchar_t* text);
 static void DrawTooltip(HDC hdc);
 static void ExecuteButton(ToolbarButtonType type);
 static void EnsureToolbarAboveOwner(ToolbarContext* ctx);
+static bool IsColorCommand(ToolbarButtonType type);
+static COLORREF ColorForCommand(ToolbarButtonType type);
 
 bool ScreenshotToolbarInit(void) {
     WNDCLASSEXA wc;
@@ -97,6 +127,8 @@ bool ScreenshotToolbarInit(void) {
     g_toolbar.hoveredButton = -1;
     g_toolbar.tooltipButton = -1;
     g_toolbar.pressedButton = -1;
+    g_toolbar.annotationColor = RGB(255, 64, 64);
+    g_toolbar.colorPaletteVisible = false;
 
     g_initialized = true;
     LOG_INFO("[工具栏] 模块初始化成功");
@@ -139,8 +171,9 @@ bool ScreenshotToolbarShow(const ScreenshotRect* selection, ToolbarCallback call
     g_callback = callback;
     g_callbackData = userData;
 
-    totalWidth = g_toolbar.buttonCount * (BUTTON_WIDTH + BUTTON_MARGIN) + BUTTON_PADDING * 2 - BUTTON_MARGIN;
-    windowHeight = BUTTON_HEIGHT + BUTTON_PADDING * 2;
+    g_toolbar.colorPaletteVisible = false;
+    totalWidth = GetToolbarWindowWidth(&g_toolbar);
+    windowHeight = GetToolbarWindowHeight(&g_toolbar);
 
     if (selection != NULL) {
         x = selection->x + (selection->width - totalWidth) / 2;
@@ -154,7 +187,7 @@ bool ScreenshotToolbarShow(const ScreenshotRect* selection, ToolbarCallback call
     }
 
     g_toolbar.hwnd = CreateWindowExA(
-        WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED,
+        WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED | WS_EX_NOACTIVATE,
         WINDOW_CLASS,
         "ScreenshotToolbar",
         WS_POPUP,
@@ -196,12 +229,20 @@ void ScreenshotToolbarHide(void) {
     g_toolbar.tooltipButton = -1;
     g_toolbar.pressedButton = -1;
     g_toolbar.trackingMouse = false;
+    g_toolbar.colorPaletteVisible = false;
     LOG_INFO("[工具栏] 工具栏已隐藏");
 }
 
 void ScreenshotToolbarSetOwner(HWND ownerHwnd) {
     g_toolbar.ownerHwnd = ownerHwnd;
     EnsureToolbarAboveOwner(&g_toolbar);
+}
+
+void ScreenshotToolbarSetAnnotationColor(COLORREF color) {
+    g_toolbar.annotationColor = color;
+    if (g_toolbar.hwnd != NULL) {
+        InvalidateRect(g_toolbar.hwnd, NULL, FALSE);
+    }
 }
 
 bool ScreenshotToolbarIsVisible(void) {
@@ -222,8 +263,8 @@ void ScreenshotToolbarUpdatePosition(const ScreenshotRect* selection) {
         return;
     }
 
-    totalWidth = g_toolbar.buttonCount * (BUTTON_WIDTH + BUTTON_MARGIN) + BUTTON_PADDING * 2 - BUTTON_MARGIN;
-    windowHeight = BUTTON_HEIGHT + BUTTON_PADDING * 2;
+    totalWidth = GetToolbarWindowWidth(&g_toolbar);
+    windowHeight = GetToolbarWindowHeight(&g_toolbar);
     x = selection->x + (selection->width - totalWidth) / 2;
     y = selection->y - windowHeight - 5;
     if (y < 0) {
@@ -247,6 +288,45 @@ static void EnsureToolbarAboveOwner(ToolbarContext* ctx) {
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
 }
 
+static int GetToolbarBaseWidth(void) {
+    return g_toolbar.buttonCount * (BUTTON_WIDTH + BUTTON_MARGIN) + BUTTON_PADDING * 2 - BUTTON_MARGIN;
+}
+
+static int GetToolbarWindowHeight(const ToolbarContext* ctx) {
+    int height = BUTTON_HEIGHT + BUTTON_PADDING * 2;
+    if (ctx != NULL && ctx->colorPaletteVisible) {
+        height += PALETTE_TOP_GAP + COLOR_SWATCH_SIZE + PALETTE_BOTTOM_PADDING;
+    }
+    return height;
+}
+
+static int GetToolbarWindowWidth(const ToolbarContext* ctx) {
+    int baseWidth = GetToolbarBaseWidth();
+    int paletteWidth = BUTTON_PADDING * 2 +
+        (int)(sizeof(g_colorOptions) / sizeof(g_colorOptions[0])) * COLOR_SWATCH_SIZE +
+        ((int)(sizeof(g_colorOptions) / sizeof(g_colorOptions[0])) - 1) * COLOR_SWATCH_MARGIN;
+
+    (void)ctx;
+    return baseWidth > paletteWidth ? baseWidth : paletteWidth;
+}
+
+static void ResizeToolbarWindow(ToolbarContext* ctx) {
+    int width;
+    int height;
+    HRGN region;
+
+    if (ctx == NULL || ctx->hwnd == NULL) {
+        return;
+    }
+
+    width = GetToolbarWindowWidth(ctx);
+    height = GetToolbarWindowHeight(ctx);
+    region = CreateRoundRectRgn(0, 0, width + 1, height + 1, 6, 6);
+    SetWindowRgn(ctx->hwnd, region, TRUE);
+    SetWindowPos(ctx->hwnd, HWND_TOPMOST, 0, 0, width, height,
+                 SWP_NOMOVE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+}
+
 static RECT GetButtonRect(int index) {
     RECT rect;
     int x = BUTTON_PADDING + index * (BUTTON_WIDTH + BUTTON_MARGIN);
@@ -264,6 +344,36 @@ static int GetButtonAtPoint(ToolbarContext* ctx, int x, int y) {
         if (x >= rect.left && x < rect.right &&
             y >= rect.top && y < rect.bottom &&
             ctx->buttons[i].enabled) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static RECT GetColorSwatchRect(int index) {
+    RECT rect;
+    int rowWidth = (int)(sizeof(g_colorOptions) / sizeof(g_colorOptions[0])) * COLOR_SWATCH_SIZE +
+        ((int)(sizeof(g_colorOptions) / sizeof(g_colorOptions[0])) - 1) * COLOR_SWATCH_MARGIN;
+    int x = (GetToolbarWindowWidth(&g_toolbar) - rowWidth) / 2 +
+        index * (COLOR_SWATCH_SIZE + COLOR_SWATCH_MARGIN);
+    int y = BUTTON_PADDING + BUTTON_HEIGHT + PALETTE_TOP_GAP;
+
+    rect.left = x;
+    rect.top = y;
+    rect.right = x + COLOR_SWATCH_SIZE;
+    rect.bottom = y + COLOR_SWATCH_SIZE;
+    return rect;
+}
+
+static int GetColorSwatchAtPoint(ToolbarContext* ctx, int x, int y) {
+    if (ctx == NULL || !ctx->colorPaletteVisible) {
+        return -1;
+    }
+
+    for (int i = 0; i < (int)(sizeof(g_colorOptions) / sizeof(g_colorOptions[0])); i++) {
+        RECT rect = GetColorSwatchRect(i);
+        if (x >= rect.left && x < rect.right &&
+            y >= rect.top && y < rect.bottom) {
             return i;
         }
     }
@@ -426,6 +536,10 @@ static void DrawToolbar(HDC hdc, ToolbarContext* ctx) {
         DrawButtonIcon(hdcMem, btn->type, &btnRect, iconColor);
     }
 
+    if (ctx->colorPaletteVisible) {
+        DrawColorPalette(hdcMem, ctx);
+    }
+
     BitBlt(hdc, 0, 0, clientRect.right, clientRect.bottom, hdcMem, 0, 0, SRCCOPY);
     SelectObject(hdcMem, hOldBitmap);
     DeleteObject(hBitmap);
@@ -444,6 +558,39 @@ static void DrawRoundedButtonBackground(HDC hdc, const RECT* rect, bool hovered)
     DeleteObject(brush);
 }
 
+static void DrawColorPalette(HDC hdc, ToolbarContext* ctx) {
+    if (hdc == NULL || ctx == NULL) {
+        return;
+    }
+
+    for (int i = 0; i < (int)(sizeof(g_colorOptions) / sizeof(g_colorOptions[0])); i++) {
+        RECT rect = GetColorSwatchRect(i);
+        bool selected = (g_colorOptions[i].color == ctx->annotationColor);
+        HBRUSH brush = CreateSolidBrush(g_colorOptions[i].color);
+        HPEN pen = CreatePen(PS_SOLID, selected ? 3 : 1,
+                             selected ? RGB(255, 255, 255) : RGB(110, 110, 110));
+        HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, brush);
+        HPEN oldPen = (HPEN)SelectObject(hdc, pen);
+
+        RoundRect(hdc, rect.left, rect.top, rect.right, rect.bottom, 6, 6);
+        SelectObject(hdc, oldPen);
+        SelectObject(hdc, oldBrush);
+        DeleteObject(pen);
+        DeleteObject(brush);
+
+        if (g_colorOptions[i].color == RGB(255, 255, 255)) {
+            HPEN whiteBorder = CreatePen(PS_SOLID, 1, RGB(180, 180, 180));
+            HBRUSH previousBrush;
+            oldPen = (HPEN)SelectObject(hdc, whiteBorder);
+            previousBrush = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
+            RoundRect(hdc, rect.left + 2, rect.top + 2, rect.right - 2, rect.bottom - 2, 4, 4);
+            SelectObject(hdc, previousBrush);
+            SelectObject(hdc, oldPen);
+            DeleteObject(whiteBorder);
+        }
+    }
+}
+
 static void DrawCenteredTextIcon(HDC hdc, const wchar_t* text, const wchar_t* fontName, int fontSize, int fontWeight, const RECT* rect, COLORREF color) {
     HFONT font = CreateFontW(fontSize, 0, 0, 0, fontWeight, FALSE, FALSE, FALSE,
                              DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
@@ -458,68 +605,104 @@ static void DrawCenteredTextIcon(HDC hdc, const wchar_t* text, const wchar_t* fo
 }
 
 static void DrawButtonIcon(HDC hdc, ToolbarButtonType type, const RECT* rect, COLORREF color) {
-    int cx = (rect->left + rect->right) / 2;
-    int cy = (rect->top + rect->bottom) / 2;
-    HPEN hPen = CreatePen(PS_SOLID, 1, color);
-    HPEN hPenBold = CreatePen(PS_SOLID, 2, color);
-    HPEN hOldPen = (HPEN)SelectObject(hdc, hPen);
-    HBRUSH hOldBrush = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
+    const wchar_t* emoji = NULL;
+    int fontSize = 19;
 
     switch (type) {
         case TOOLBAR_BTN_SAVE:
-            DrawCenteredTextIcon(hdc, L"\xE74E", L"Segoe MDL2 Assets", 18, FW_NORMAL, rect, color);
+            emoji = L"\xD83D\xDCBE";
             break;
         case TOOLBAR_BTN_COPY:
-            DrawCenteredTextIcon(hdc, L"\xE8C8", L"Segoe MDL2 Assets", 18, FW_NORMAL, rect, color);
+            emoji = L"\xD83D\xDCCB";
             break;
         case TOOLBAR_BTN_PIN:
-            DrawCenteredTextIcon(hdc, L"\xE718", L"Segoe MDL2 Assets", 18, FW_NORMAL, rect, color);
-            break;
-        case TOOLBAR_BTN_PENCIL:
-            DrawCenteredTextIcon(hdc, L"\xE70F", L"Segoe MDL2 Assets", 18, FW_NORMAL, rect, color);
-            break;
-        case TOOLBAR_BTN_CLOSE:
-            DrawCenteredTextIcon(hdc, L"\xE711", L"Segoe MDL2 Assets", 18, FW_NORMAL, rect, color);
+            emoji = L"\xD83D\xDCCC";
             break;
         case TOOLBAR_BTN_RECT:
-            SelectObject(hdc, hPenBold);
-            RoundRect(hdc, cx - 10, cy - 7, cx + 10, cy + 7, 3, 3);
+            emoji = L"\xD83D\xDD32";
             break;
-        case TOOLBAR_BTN_ARROW: {
-            POINT head[3];
-            SelectObject(hdc, hPenBold);
-            MoveToEx(hdc, cx - 9, cy + 7, NULL);
-            LineTo(hdc, cx + 7, cy - 7);
-            head[0].x = cx + 8; head[0].y = cy - 8;
-            head[1].x = cx + 1; head[1].y = cy - 7;
-            head[2].x = cx + 7; head[2].y = cy;
-            Polygon(hdc, head, 3);
+        case TOOLBAR_BTN_ARROW:
+            emoji = L"\x27A1\xFE0F";
             break;
-        }
+        case TOOLBAR_BTN_PENCIL:
+            emoji = L"\x270F\xFE0F";
+            break;
         case TOOLBAR_BTN_CIRCLE:
-            SelectObject(hdc, hPenBold);
-            Ellipse(hdc, cx - 9, cy - 9, cx + 9, cy + 9);
+            emoji = L"\xD83D\xDD34";
             break;
         case TOOLBAR_BTN_TEXT:
-            DrawCenteredTextIcon(hdc, L"T", L"Georgia", 20, FW_BOLD, rect, color);
+            emoji = L"\xD83D\xDD24";
+            fontSize = 18;
             break;
+        case TOOLBAR_BTN_COLOR:
+            emoji = L"\xD83C\xDFA8";
+            fontSize = 18;
+            break;
+        case TOOLBAR_BTN_TEXT_SMALLER:
+            DrawCenteredTextIcon(hdc, L"A-", L"Segoe UI", 15, FW_BOLD, rect, color);
+            return;
+        case TOOLBAR_BTN_TEXT_LARGER:
+            DrawCenteredTextIcon(hdc, L"A+", L"Segoe UI", 15, FW_BOLD, rect, color);
+            return;
         case TOOLBAR_BTN_OCR:
-            DrawCenteredTextIcon(hdc, L"OCR", L"Segoe UI", 9, FW_BOLD, rect, color);
+            emoji = L"\xD83D\xDD0D";
+            fontSize = 18;
+            break;
+        case TOOLBAR_BTN_CLOSE:
+            emoji = L"\x274C";
             break;
         default:
             break;
     }
 
-    SelectObject(hdc, hOldBrush);
-    SelectObject(hdc, hOldPen);
-    DeleteObject(hPen);
-    DeleteObject(hPenBold);
+    if (emoji != NULL) {
+        DrawCenteredTextIcon(hdc, emoji, L"Segoe UI Emoji", fontSize, FW_NORMAL, rect, color);
+        if (type == TOOLBAR_BTN_COLOR) {
+            RECT swatch;
+            HBRUSH brush;
+            HPEN pen;
+            HBRUSH oldBrush;
+            HPEN oldPen;
+
+            swatch.left = rect->right - 13;
+            swatch.top = rect->bottom - 11;
+            swatch.right = rect->right - 5;
+            swatch.bottom = rect->bottom - 3;
+            brush = CreateSolidBrush(g_toolbar.annotationColor);
+            pen = CreatePen(PS_SOLID, 1, RGB(255, 255, 255));
+            oldBrush = (HBRUSH)SelectObject(hdc, brush);
+            oldPen = (HPEN)SelectObject(hdc, pen);
+            Rectangle(hdc, swatch.left, swatch.top, swatch.right, swatch.bottom);
+            SelectObject(hdc, oldPen);
+            SelectObject(hdc, oldBrush);
+            DeleteObject(pen);
+            DeleteObject(brush);
+        }
+    }
 }
 
 static void ExecuteButton(ToolbarButtonType type) {
     if (g_callback != NULL) {
         g_callback(type, g_callbackData);
     }
+}
+
+static bool IsColorCommand(ToolbarButtonType type) {
+    return type == TOOLBAR_BTN_COLOR_RED ||
+           type == TOOLBAR_BTN_COLOR_YELLOW ||
+           type == TOOLBAR_BTN_COLOR_GREEN ||
+           type == TOOLBAR_BTN_COLOR_BLUE ||
+           type == TOOLBAR_BTN_COLOR_WHITE ||
+           type == TOOLBAR_BTN_COLOR_BLACK;
+}
+
+static COLORREF ColorForCommand(ToolbarButtonType type) {
+    for (int i = 0; i < (int)(sizeof(g_colorOptions) / sizeof(g_colorOptions[0])); i++) {
+        if (g_colorOptions[i].command == type) {
+            return g_colorOptions[i].color;
+        }
+    }
+    return g_toolbar.annotationColor;
 }
 
 static LRESULT CALLBACK ToolbarWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -566,7 +749,14 @@ static LRESULT CALLBACK ToolbarWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             return 0;
         case WM_LBUTTONDOWN: {
             int clicked;
+            int swatch;
             HideToolbarTooltip(&g_toolbar);
+            swatch = GetColorSwatchAtPoint(&g_toolbar, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+            if (swatch >= 0) {
+                g_toolbar.pressedButton = -1;
+                SetCapture(hwnd);
+                return 0;
+            }
             clicked = GetButtonAtPoint(&g_toolbar, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
             g_toolbar.pressedButton = clicked;
             if (clicked >= 0) {
@@ -578,13 +768,39 @@ static LRESULT CALLBACK ToolbarWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
         case WM_LBUTTONUP: {
             int pressed = g_toolbar.pressedButton;
             int released = GetButtonAtPoint(&g_toolbar, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+            int swatch = GetColorSwatchAtPoint(&g_toolbar, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
             if (GetCapture() == hwnd) {
                 ReleaseCapture();
             }
             g_toolbar.pressedButton = -1;
+            if (swatch >= 0) {
+                ToolbarButtonType command = g_colorOptions[swatch].command;
+                g_toolbar.annotationColor = ColorForCommand(command);
+                g_toolbar.colorPaletteVisible = false;
+                ResizeToolbarWindow(&g_toolbar);
+                InvalidateRect(hwnd, NULL, FALSE);
+                ExecuteButton(command);
+                EnsureToolbarAboveOwner(&g_toolbar);
+                return 0;
+            }
             InvalidateRect(hwnd, NULL, FALSE);
             if (pressed >= 0 && pressed == released && pressed < g_toolbar.buttonCount) {
-                ExecuteButton(g_toolbar.buttons[pressed].type);
+                ToolbarButtonType type = g_toolbar.buttons[pressed].type;
+                if (type == TOOLBAR_BTN_COLOR) {
+                    g_toolbar.colorPaletteVisible = !g_toolbar.colorPaletteVisible;
+                    ResizeToolbarWindow(&g_toolbar);
+                    HideToolbarTooltip(&g_toolbar);
+                    InvalidateRect(hwnd, NULL, FALSE);
+                    return 0;
+                }
+                if (g_toolbar.colorPaletteVisible) {
+                    g_toolbar.colorPaletteVisible = false;
+                    ResizeToolbarWindow(&g_toolbar);
+                }
+                if (IsColorCommand(type)) {
+                    g_toolbar.annotationColor = ColorForCommand(type);
+                }
+                ExecuteButton(type);
                 EnsureToolbarAboveOwner(&g_toolbar);
             }
             return 0;
@@ -599,6 +815,7 @@ static LRESULT CALLBACK ToolbarWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             g_toolbar.isVisible = false;
             g_toolbar.trackingMouse = false;
             g_toolbar.pressedButton = -1;
+            g_toolbar.colorPaletteVisible = false;
             return 0;
         default:
             return DefWindowProcA(hwnd, msg, wParam, lParam);

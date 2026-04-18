@@ -16,8 +16,17 @@ typedef enum {
     TOOLBAR_BTN_PENCIL,     // 铅笔
     TOOLBAR_BTN_CIRCLE,     // 圆形标注
     TOOLBAR_BTN_TEXT,       // 插入文字
+    TOOLBAR_BTN_COLOR,
+    TOOLBAR_BTN_TEXT_SMALLER,
+    TOOLBAR_BTN_TEXT_LARGER,
     TOOLBAR_BTN_OCR,        // OCR
     TOOLBAR_BTN_CLOSE,      // 关闭
+    TOOLBAR_BTN_COLOR_RED,
+    TOOLBAR_BTN_COLOR_YELLOW,
+    TOOLBAR_BTN_COLOR_GREEN,
+    TOOLBAR_BTN_COLOR_BLUE,
+    TOOLBAR_BTN_COLOR_WHITE,
+    TOOLBAR_BTN_COLOR_BLACK,
     TOOLBAR_BTN_COUNT       // 按钮数量
 } ToolbarButtonType;
 
@@ -40,9 +49,11 @@ typedef struct {
     int hoveredButton;      // 当前悬停按钮索引
     int tooltipButton;
     int pressedButton;
+    COLORREF annotationColor;
     bool isVisible;
     bool isHorizontal;      // 是否水平布局
     bool trackingMouse;
+    bool colorPaletteVisible;
 } ToolbarContext;
 
 // 回调函数类型
@@ -60,6 +71,7 @@ void ScreenshotToolbarCleanup(void);
 // userData: 回调用户数据
 bool ScreenshotToolbarShow(const ScreenshotRect* selection, ToolbarCallback callback, void* userData);
 void ScreenshotToolbarSetOwner(HWND ownerHwnd);
+void ScreenshotToolbarSetAnnotationColor(COLORREF color);
 
 // 隐藏工具栏
 void ScreenshotToolbarHide(void);

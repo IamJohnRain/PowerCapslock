@@ -8,6 +8,7 @@
 #include <commdlg.h>
 #include <shlobj.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define MODULE_NAME "截图管理器"
@@ -22,6 +23,8 @@ static ScreenshotImage* GetSelectionImageForAction(void);
 static bool BuildDefaultScreenshotPath(char* path, size_t pathSize);
 static bool PromptSaveScreenshotPath(char* path, size_t pathSize);
 static void SelectAnnotationTool(OverlayAnnotateTool tool);
+static void SelectAnnotationColor(COLORREF color);
+static void AdjustTextAnnotationSize(int direction);
 static bool RestoreActiveCaptureUi(void);
 
 static void OnToolbarButton(ToolbarButtonType button, void* userData) {
@@ -103,6 +106,30 @@ static void OnToolbarButton(ToolbarButtonType button, void* userData) {
             break;
         case TOOLBAR_BTN_TEXT:
             SelectAnnotationTool(OVERLAY_ANNOTATE_TEXT);
+            break;
+        case TOOLBAR_BTN_COLOR_RED:
+            SelectAnnotationColor(RGB(255, 64, 64));
+            break;
+        case TOOLBAR_BTN_COLOR_YELLOW:
+            SelectAnnotationColor(RGB(255, 204, 0));
+            break;
+        case TOOLBAR_BTN_COLOR_GREEN:
+            SelectAnnotationColor(RGB(34, 197, 94));
+            break;
+        case TOOLBAR_BTN_COLOR_BLUE:
+            SelectAnnotationColor(RGB(59, 130, 246));
+            break;
+        case TOOLBAR_BTN_COLOR_WHITE:
+            SelectAnnotationColor(RGB(255, 255, 255));
+            break;
+        case TOOLBAR_BTN_COLOR_BLACK:
+            SelectAnnotationColor(RGB(0, 0, 0));
+            break;
+        case TOOLBAR_BTN_TEXT_SMALLER:
+            AdjustTextAnnotationSize(-1);
+            break;
+        case TOOLBAR_BTN_TEXT_LARGER:
+            AdjustTextAnnotationSize(1);
             break;
 
         default:
@@ -195,6 +222,52 @@ static void SelectAnnotationTool(OverlayAnnotateTool tool) {
     LOG_INFO("[%s] Annotation tool selected: %d", MODULE_NAME, tool);
 }
 
+static void SelectAnnotationColor(COLORREF color) {
+    HWND toolbarHwnd;
+
+    ScreenshotOverlaySetAnnotationColor(color);
+    ScreenshotToolbarSetAnnotationColor(color);
+
+    toolbarHwnd = ScreenshotToolbarGetWindow();
+    if (toolbarHwnd != NULL) {
+        SetWindowPos(toolbarHwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    }
+
+    LOG_INFO("[%s] Annotation color selected: 0x%06X", MODULE_NAME, (unsigned int)color);
+}
+
+static void AdjustTextAnnotationSize(int direction) {
+    static const int sizes[] = {16, 20, 24, 28, 32, 40, 48};
+    int current;
+    int index = 0;
+    int count = (int)(sizeof(sizes) / sizeof(sizes[0]));
+    HWND toolbarHwnd;
+
+    current = ScreenshotOverlayGetTextFontHeight();
+    for (int i = 0; i < count; i++) {
+        if (abs(sizes[i] - current) < abs(sizes[index] - current)) {
+            index = i;
+        }
+    }
+
+    if (direction < 0 && index > 0) {
+        index--;
+    } else if (direction > 0 && index < count - 1) {
+        index++;
+    }
+
+    ScreenshotOverlaySetTextFontHeight(sizes[index]);
+
+    toolbarHwnd = ScreenshotToolbarGetWindow();
+    if (toolbarHwnd != NULL) {
+        SetWindowPos(toolbarHwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    }
+
+    LOG_INFO("[%s] Text annotation size selected: %d", MODULE_NAME, sizes[index]);
+}
+
 static bool RestoreActiveCaptureUi(void) {
     const ScreenshotRect* selection;
     ScreenshotRect screenSelection;
@@ -215,6 +288,7 @@ static bool RestoreActiveCaptureUi(void) {
     if (selection != NULL && selection->width > 0 && selection->height > 0) {
         screenSelection = SelectionToScreenRect(selection);
         ScreenshotToolbarSetOwner(overlayHwnd);
+        ScreenshotToolbarSetAnnotationColor(ScreenshotOverlayGetAnnotationColor());
         if (ScreenshotToolbarIsVisible()) {
             ScreenshotToolbarUpdatePosition(&screenSelection);
         } else if (!ScreenshotToolbarShow(&screenSelection, OnToolbarButton, NULL)) {
@@ -377,6 +451,7 @@ void ScreenshotManagerOnSelectionComplete(void) {
 
     screenSelection = SelectionToScreenRect(selection);
     ScreenshotToolbarSetOwner(ScreenshotOverlayGetWindow());
+    ScreenshotToolbarSetAnnotationColor(ScreenshotOverlayGetAnnotationColor());
     if (!ScreenshotToolbarShow(&screenSelection, OnToolbarButton, NULL)) {
         LOG_ERROR("[%s] Failed to show screenshot toolbar", MODULE_NAME);
     }
