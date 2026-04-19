@@ -61,11 +61,16 @@ set(HEADERS
 # 可执行文件
 add_executable(powercapslock WIN32 ${SOURCES} ${HEADERS})
 
+# Tesseract OCR 路径
+set(TESSERACT_DIR "C:/Program Files/Tesseract-OCR")
+set(TESSERACT_SRC_DIR "D:/code/tesseract")
+
 # 包含目录
 target_include_directories(powercapslock PRIVATE
     src
     ${SHERPA_ONNX_DIR}/include/sherpa-onnx/c-api
     ${CMAKE_SOURCE_DIR}/lib/webview2
+    ${TESSERACT_SRC_DIR}/include
 )
 
 # 链接库
@@ -91,6 +96,7 @@ target_compile_definitions(powercapslock PRIVATE
     IDI_ICON_NORMAL=101
     IDI_ICON_DISABLED=102
     USE_SHERPA_ONNX
+    USE_TESSERACT
 )
 
 # 构建类型
@@ -118,6 +124,12 @@ add_custom_command(TARGET powercapslock POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${SHERPA_ONNX_DIR}/lib/sherpa-onnx-cxx-api.dll
         $<TARGET_FILE_DIR:powercapslock>/sherpa-onnx-cxx-api.dll
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${TESSERACT_DIR}/libtesseract-5.dll
+        $<TARGET_FILE_DIR:powercapslock>/libtesseract-5.dll
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${TESSERACT_DIR}/tessdata
+        $<TARGET_FILE_DIR:powercapslock>/tessdata
 )
 
 # 编译选项
