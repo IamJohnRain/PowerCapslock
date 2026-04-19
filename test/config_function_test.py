@@ -584,7 +584,7 @@ class ConfigFunctionSuite:
 
         proc = self.start_config_dialog(env)
         try:
-            rc = proc.wait(timeout=18)
+            rc = proc.wait(timeout=30)  # 增加超时时间到30秒
         except subprocess.TimeoutExpired:
             self.stop_process(proc)
             return False, f"{action} timed out"

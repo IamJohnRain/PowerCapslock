@@ -32,7 +32,6 @@ static ToolbarButton g_defaultButtons[] = {
     { TOOLBAR_BTN_SAVE,   L"\x4FDD\x5B58 (Ctrl+S)",          "save", true },
     { TOOLBAR_BTN_COPY,   L"\x590D\x5236 (Ctrl+C)",          "copy", true },
     { TOOLBAR_BTN_OCR,    L"OCR\x8BC6\x522B",                "ocr", true },
-    { TOOLBAR_BTN_PIN,    L"\x6302\x8D77\x5230\x5C4F\x5E55", "pin", true },
     { TOOLBAR_BTN_RECT,   L"\x77E9\x5F62\x6807\x6CE8",       "rect", true },
     { TOOLBAR_BTN_ARROW,  L"\x7BAD\x5934\x6807\x6CE8",       "arrow", true },
     { TOOLBAR_BTN_PENCIL, L"\x753B\x7B14\x6807\x6CE8",       "pencil", true },
@@ -616,9 +615,6 @@ static void DrawButtonIcon(HDC hdc, ToolbarButtonType type, const RECT* rect, CO
         case TOOLBAR_BTN_COPY:
             emoji = L"\xD83D\xDCCB";
             break;
-        case TOOLBAR_BTN_PIN:
-            emoji = L"\xD83D\xDCCC";
-            break;
         case TOOLBAR_BTN_RECT:
             emoji = L"\xD83D\xDD32";
             break;
@@ -646,7 +642,7 @@ static void DrawButtonIcon(HDC hdc, ToolbarButtonType type, const RECT* rect, CO
             DrawCenteredTextIcon(hdc, L"A+", L"Segoe UI", 15, FW_BOLD, rect, color);
             return;
         case TOOLBAR_BTN_OCR:
-            emoji = L"\xD83D\xDD0D";
+            emoji = L"\x23F8\xFE0F";  // ⏸ (pause symbol - indicates suspend/hang)
             fontSize = 18;
             break;
         case TOOLBAR_BTN_CLOSE:

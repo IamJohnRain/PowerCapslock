@@ -26,6 +26,10 @@ static void SetResizeCursor(OverlayResizeHandle handle);
 static void StartSelectionResize(OverlayContext* ctx, POINT pt, OverlayResizeHandle handle);
 static void UpdateSelectionResize(OverlayContext* ctx, POINT pt);
 static void FinishSelectionResize(OverlayContext* ctx);
+static bool CanMoveSelectionAtPoint(const OverlayContext* ctx, POINT pt);
+static void StartSelectionMove(OverlayContext* ctx, POINT pt);
+static void UpdateSelectionMove(OverlayContext* ctx, POINT pt);
+static void FinishSelectionMove(OverlayContext* ctx);
 static void DrawOverlay(HDC hdc, OverlayContext* ctx);
 static void DrawSelectionRect(HDC hdc, OverlayContext* ctx);
 static void DrawHoveredWindow(HDC hdc, OverlayContext* ctx);
@@ -780,6 +784,80 @@ static void FinishSelectionResize(OverlayContext* ctx) {
     InvalidateRect(ctx->hwnd, NULL, FALSE);
 }
 
+static bool CanMoveSelectionAtPoint(const OverlayContext* ctx, POINT pt) {
+    return HasEditableSelection(ctx) &&
+           ctx->annotateTool == OVERLAY_ANNOTATE_NONE &&
+           HitTestSelectionResizeHandle(ctx, pt) == OVERLAY_RESIZE_NONE &&
+           pt.x >= ctx->selection.x &&
+           pt.x <= ctx->selection.x + ctx->selection.width &&
+           pt.y >= ctx->selection.y &&
+           pt.y <= ctx->selection.y + ctx->selection.height;
+}
+
+static void StartSelectionMove(OverlayContext* ctx, POINT pt) {
+    if (ctx == NULL || !CanMoveSelectionAtPoint(ctx, pt)) {
+        return;
+    }
+
+    if (ctx->isEditingText) {
+        CommitTextEdit(ctx);
+    }
+
+    ctx->isMovingSelection = true;
+    ctx->moveStartPoint = pt;
+    ctx->moveStartSelection = ctx->selection;
+    SetCursor(LoadCursor(NULL, IDC_SIZEALL));
+    SetCapture(ctx->hwnd);
+}
+
+static void UpdateSelectionMove(OverlayContext* ctx, POINT pt) {
+    int dx;
+    int dy;
+    int maxWidth;
+    int maxHeight;
+    int x;
+    int y;
+
+    if (ctx == NULL || !ctx->isMovingSelection) {
+        return;
+    }
+
+    dx = pt.x - ctx->moveStartPoint.x;
+    dy = pt.y - ctx->moveStartPoint.y;
+    maxWidth = ctx->screenImage != NULL ? ctx->screenImage->width : GetSystemMetrics(SM_CXVIRTUALSCREEN);
+    maxHeight = ctx->screenImage != NULL ? ctx->screenImage->height : GetSystemMetrics(SM_CYVIRTUALSCREEN);
+    x = ctx->moveStartSelection.x + dx;
+    y = ctx->moveStartSelection.y + dy;
+
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    if (x + ctx->moveStartSelection.width > maxWidth) {
+        x = maxWidth - ctx->moveStartSelection.width;
+    }
+    if (y + ctx->moveStartSelection.height > maxHeight) {
+        y = maxHeight - ctx->moveStartSelection.height;
+    }
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+
+    ctx->selection.x = x;
+    ctx->selection.y = y;
+    ctx->selection.width = ctx->moveStartSelection.width;
+    ctx->selection.height = ctx->moveStartSelection.height;
+    InvalidateRect(ctx->hwnd, NULL, FALSE);
+}
+
+static void FinishSelectionMove(OverlayContext* ctx) {
+    if (ctx == NULL || !ctx->isMovingSelection) {
+        return;
+    }
+
+    ctx->isMovingSelection = false;
+    ReleaseCapture();
+    ScreenshotManagerOnSelectionComplete();
+    InvalidateRect(ctx->hwnd, NULL, FALSE);
+}
+
 static bool PointInSelection(OverlayContext* ctx, POINT pt) {
     return ctx != NULL &&
            pt.x >= ctx->selection.x &&
@@ -797,6 +875,7 @@ static void ResetAnnotations(OverlayContext* ctx) {
     ctx->isDrawingAnnotation = false;
     ctx->isEditingText = false;
     ctx->isResizingSelection = false;
+    ctx->isMovingSelection = false;
     ctx->isSelectingText = false;
     ctx->currentAnnotationColor = DEFAULT_ANNOTATION_COLOR;
     ctx->currentLineWidth = DEFAULT_ANNOTATION_LINE_WIDTH;
@@ -2147,6 +2226,9 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                     : HitTestSelectionResizeHandle(&g_overlay, pt);
                 if (handle != OVERLAY_RESIZE_NONE) {
                     SetResizeCursor(handle);
+                } else if (g_overlay.isMovingSelection ||
+                           CanMoveSelectionAtPoint(&g_overlay, pt)) {
+                    SetCursor(LoadCursor(NULL, IDC_SIZEALL));
                 } else if (g_overlay.crossCursor != NULL) {
                     SetCursor(g_overlay.crossCursor);
                 }
@@ -2170,6 +2252,11 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             resizeHandle = HitTestSelectionResizeHandle(&g_overlay, pt);
             if (resizeHandle != OVERLAY_RESIZE_NONE) {
                 StartSelectionResize(&g_overlay, pt, resizeHandle);
+                return 0;
+            }
+
+            if (CanMoveSelectionAtPoint(&g_overlay, pt)) {
+                StartSelectionMove(&g_overlay, pt);
                 return 0;
             }
 
@@ -2206,6 +2293,9 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             } else if (g_overlay.isResizingSelection) {
                 UpdateSelectionResize(&g_overlay, pt);
                 SetResizeCursor(g_overlay.resizeHandle);
+            } else if (g_overlay.isMovingSelection) {
+                UpdateSelectionMove(&g_overlay, pt);
+                SetCursor(LoadCursor(NULL, IDC_SIZEALL));
             } else if (g_overlay.isSelecting) {
                 g_overlay.currentPoint = pt;
                 UpdateSelectionRect(&g_overlay);
@@ -2220,6 +2310,10 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                 }
                 if (resizeHandle != OVERLAY_RESIZE_NONE) {
                     SetResizeCursor(resizeHandle);
+                    return 0;
+                }
+                if (CanMoveSelectionAtPoint(&g_overlay, pt)) {
+                    SetCursor(LoadCursor(NULL, IDC_SIZEALL));
                     return 0;
                 }
                 HWND hovered = GetWindowFromPointEx(pt);
@@ -2247,6 +2341,9 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             } else if (g_overlay.isResizingSelection) {
                 UpdateSelectionResize(&g_overlay, pt);
                 FinishSelectionResize(&g_overlay);
+            } else if (g_overlay.isMovingSelection) {
+                UpdateSelectionMove(&g_overlay, pt);
+                FinishSelectionMove(&g_overlay);
             } else if (g_overlay.isDrawingAnnotation) {
                 FinishAnnotation(&g_overlay, pt);
             } else if (g_overlay.isSelecting) {
@@ -2287,6 +2384,12 @@ static LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
                 if (g_overlay.isResizingSelection) {
                     g_overlay.isResizingSelection = false;
                     g_overlay.resizeHandle = OVERLAY_RESIZE_NONE;
+                    ReleaseCapture();
+                    InvalidateRect(hwnd, NULL, FALSE);
+                    return 0;
+                }
+                if (g_overlay.isMovingSelection) {
+                    g_overlay.isMovingSelection = false;
                     ReleaseCapture();
                     InvalidateRect(hwnd, NULL, FALSE);
                     return 0;

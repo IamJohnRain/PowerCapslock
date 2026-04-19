@@ -55,3 +55,4 @@ test/test_run_*/
 test/ocr_selection_*/
 test/*_output/
 .worktrees/
+.dist/

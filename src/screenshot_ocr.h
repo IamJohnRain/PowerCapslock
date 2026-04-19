@@ -30,7 +30,7 @@ typedef struct {
 } OcrAsyncMessage;
 
 // Async OCR API
-BOOL OCRRecognizeAsync(const ScreenshotImage* image, HWND hwnd, UINT msg);
+BOOL OCRRecognizeAsync(const ScreenshotImage* image, HWND hwnd, UINT msg, DWORD clientSessionId);
 void OCRCancelAsync(void);
 
 BOOL OCRInit(void);

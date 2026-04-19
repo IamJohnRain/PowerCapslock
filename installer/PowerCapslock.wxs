@@ -1,0 +1,254 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+    <Package
+        Name="PowerCapslock"
+        Version="1.0.0"
+        Manufacturer="PowerCapslock"
+        UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-EF1234567890"
+        Compressed="yes"
+        InstallerVersion="500">
+
+        <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+        <MediaTemplate EmbedCab="yes" />
+
+        <Feature Id="ProductFeature" Title="PowerCapslock" Level="1">
+            <ComponentGroupRef Id="ProductComponents" />
+            <ComponentRef Id="ApplicationShortcut" />
+            <ComponentRef Id="DesktopShortcut" />
+        </Feature>
+
+        <StandardDirectory Id="ProgramFiles64Folder">
+            <Directory Id="INSTALLFOLDER" Name="PowerCapslock">
+                <Directory Id="TessdataFolder" Name="tessdata" />
+                <Directory Id="ResourcesFolder" Name="resources" />
+            </Directory>
+        </StandardDirectory>
+
+        <StandardDirectory Id="ProgramMenuFolder">
+            <Directory Id="ApplicationProgramsFolder" Name="PowerCapslock" />
+        </StandardDirectory>
+
+        <StandardDirectory Id="DesktopFolder" />
+
+        <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+            <!-- Main executable -->
+            <Component Id="PowerCapslockExe">
+                <File Id="PowerCapslockExe" Source="$(var.SourceDir)\powercapslock.exe" KeyPath="yes" />
+            </Component>
+
+            <!-- WebView2 Loader -->
+            <Component Id="WebView2Loader">
+                <File Id="WebView2Loader" Source="$(var.SourceDir)\WebView2Loader.dll" />
+            </Component>
+
+            <!-- ONNX Runtime DLLs -->
+            <Component Id="OnnxRuntime">
+                <File Id="OnnxRuntime" Source="$(var.SherpaOnnxDir)\lib\onnxruntime.dll" />
+            </Component>
+            <Component Id="OnnxRuntimeProviders">
+                <File Id="OnnxRuntimeProviders" Source="$(var.SherpaOnnxDir)\lib\onnxruntime_providers_shared.dll" />
+            </Component>
+
+            <!-- Sherpa ONNX DLLs -->
+            <Component Id="SherpaOnnxCApi">
+                <File Id="SherpaOnnxCApi" Source="$(var.SherpaOnnxDir)\lib\sherpa-onnx-c-api.dll" />
+            </Component>
+            <Component Id="SherpaOnnxCxxApi">
+                <File Id="SherpaOnnxCxxApi" Source="$(var.SherpaOnnxDir)\lib\sherpa-onnx-cxx-api.dll" />
+            </Component>
+
+            <!-- Tesseract main DLL -->
+            <Component Id="LibTesseract5">
+                <File Id="LibTesseract5" Source="$(var.TesseractDir)\libtesseract-5.dll" />
+            </Component>
+
+            <!-- Tesseract dependency DLLs -->
+            <Component Id="LibArchive">
+                <File Id="LibArchive" Source="$(var.TesseractDir)\libarchive-13.dll" />
+            </Component>
+            <Component Id="LibBrotli">
+                <File Id="LibBrotli" Source="$(var.TesseractDir)\libbrotlicommon.dll" />
+                <File Id="LibBrotliDec" Source="$(var.TesseractDir)\libbrotlidec.dll" />
+            </Component>
+            <Component Id="LibBzip2">
+                <File Id="LibBzip2" Source="$(var.TesseractDir)\libbz2-1.dll" />
+            </Component>
+            <Component Id="LibCairo">
+                <File Id="LibCairo" Source="$(var.TesseractDir)\libcairo-2.dll" />
+            </Component>
+            <Component Id="LibCrypto">
+                <File Id="LibCrypto" Source="$(var.TesseractDir)\libcrypto-3-x64.dll" />
+            </Component>
+            <Component Id="LibCurl">
+                <File Id="LibCurl" Source="$(var.TesseractDir)\libcurl-4.dll" />
+            </Component>
+            <Component Id="LibDeflate">
+                <File Id="LibDeflate" Source="$(var.TesseractDir)\libdeflate.dll" />
+            </Component>
+            <Component Id="LibExpat">
+                <File Id="LibExpat" Source="$(var.TesseractDir)\libexpat-1.dll" />
+            </Component>
+            <Component Id="LibFontconfig">
+                <File Id="LibFontconfig" Source="$(var.TesseractDir)\libfontconfig-1.dll" />
+            </Component>
+            <Component Id="LibFreetype">
+                <File Id="LibFreetype" Source="$(var.TesseractDir)\libfreetype-6.dll" />
+            </Component>
+            <Component Id="LibGlib">
+                <File Id="LibGlib" Source="$(var.TesseractDir)\libglib-2.0-0.dll" />
+                <File Id="LibGio" Source="$(var.TesseractDir)\libgio-2.0-0.dll" />
+                <File Id="LibGmodule" Source="$(var.TesseractDir)\libgmodule-2.0-0.dll" />
+                <File Id="LibGobject" Source="$(var.TesseractDir)\libgobject-2.0-0.dll" />
+            </Component>
+            <Component Id="LibHarfbuzz">
+                <File Id="LibHarfbuzz" Source="$(var.TesseractDir)\libharfbuzz-0.dll" />
+            </Component>
+            <Component Id="LibIconv">
+                <File Id="LibIconv" Source="$(var.TesseractDir)\libiconv-2.dll" />
+            </Component>
+            <Component Id="LibICU">
+                <File Id="LibICUuc" Source="$(var.TesseractDir)\libicuuc75.dll" />
+                <File Id="LibICUin" Source="$(var.TesseractDir)\libicuin75.dll" />
+                <File Id="LibICUdt" Source="$(var.TesseractDir)\libicudt75.dll" />
+            </Component>
+            <Component Id="LibJbig">
+                <File Id="LibJbig" Source="$(var.TesseractDir)\libjbig-0.dll" />
+            </Component>
+            <Component Id="LibJpeg">
+                <File Id="LibJpeg" Source="$(var.TesseractDir)\libjpeg-8.dll" />
+            </Component>
+            <Component Id="LibLeptonica">
+                <File Id="LibLeptonica" Source="$(var.TesseractDir)\libleptonica-6.dll" />
+            </Component>
+            <Component Id="LibLz4">
+                <File Id="LibLz4" Source="$(var.TesseractDir)\liblz4.dll" />
+            </Component>
+            <Component Id="LibLzma">
+                <File Id="LibLzma" Source="$(var.TesseractDir)\liblzma-5.dll" />
+            </Component>
+            <Component Id="LibOpenjp2">
+                <File Id="LibOpenjp2" Source="$(var.TesseractDir)\libopenjp2-7.dll" />
+            </Component>
+            <Component Id="LibPango">
+                <File Id="LibPango" Source="$(var.TesseractDir)\libpango-1.0-0.dll" />
+                <File Id="LibPangocairo" Source="$(var.TesseractDir)\libpangocairo-1.0-0.dll" />
+                <File Id="LibPangowin32" Source="$(var.TesseractDir)\libpangowin32-1.0-0.dll" />
+                <File Id="LibPangoft2" Source="$(var.TesseractDir)\libpangoft2-1.0-0.dll" />
+            </Component>
+            <Component Id="LibPcre2">
+                <File Id="LibPcre2" Source="$(var.TesseractDir)\libpcre2-8-0.dll" />
+            </Component>
+            <Component Id="LibPixman">
+                <File Id="LibPixman" Source="$(var.TesseractDir)\libpixman-1-0.dll" />
+            </Component>
+            <Component Id="LibPng">
+                <File Id="LibPng" Source="$(var.TesseractDir)\libpng16-16.dll" />
+            </Component>
+            <Component Id="LibSsl">
+                <File Id="LibSsl" Source="$(var.TesseractDir)\libssl-3-x64.dll" />
+            </Component>
+            <Component Id="LibTiff">
+                <File Id="LibTiff" Source="$(var.TesseractDir)\libtiff-6.dll" />
+            </Component>
+            <Component Id="LibWebp">
+                <File Id="LibWebp" Source="$(var.TesseractDir)\libwebp-7.dll" />
+                <File Id="LibWebpmux" Source="$(var.TesseractDir)\libwebpmux-3.dll" />
+            </Component>
+            <Component Id="LibZstd">
+                <File Id="LibZstd" Source="$(var.TesseractDir)\libzstd.dll" />
+            </Component>
+            <Component Id="LibZlib">
+                <File Id="LibZlib" Source="$(var.TesseractDir)\zlib1.dll" />
+            </Component>
+            <Component Id="LibGcc">
+                <File Id="LibGcc" Source="$(var.TesseractDir)\libgcc_s_seh-1.dll" />
+                <File Id="LibStdCpp" Source="$(var.TesseractDir)\libstdc++-6.dll" />
+                <File Id="LibWinpthread" Source="$(var.TesseractDir)\libwinpthread-1.dll" />
+            </Component>
+            <Component Id="LibDatrie">
+                <File Id="LibDatrie" Source="$(var.TesseractDir)\libdatrie-1.dll" />
+            </Component>
+            <Component Id="LibFribidi">
+                <File Id="LibFribidi" Source="$(var.TesseractDir)\libfribidi-0.dll" />
+            </Component>
+            <Component Id="LibGif">
+                <File Id="LibGif" Source="$(var.TesseractDir)\libgif-7.dll" />
+            </Component>
+            <Component Id="LibIdn2">
+                <File Id="LibIdn2" Source="$(var.TesseractDir)\libidn2-0.dll" />
+            </Component>
+            <Component Id="LibIntl">
+                <File Id="LibIntl" Source="$(var.TesseractDir)\libintl-8.dll" />
+            </Component>
+            <Component Id="LibLerc">
+                <File Id="LibLerc" Source="$(var.TesseractDir)\libLerc.dll" />
+            </Component>
+            <Component Id="LibPsl">
+                <File Id="LibPsl" Source="$(var.TesseractDir)\libpsl-5.dll" />
+            </Component>
+            <Component Id="LibSharpyuv">
+                <File Id="LibSharpyuv" Source="$(var.TesseractDir)\libsharpyuv-0.dll" />
+            </Component>
+            <Component Id="LibSsh2">
+                <File Id="LibSsh2" Source="$(var.TesseractDir)\libssh2-1.dll" />
+            </Component>
+            <Component Id="LibThai">
+                <File Id="LibThai" Source="$(var.TesseractDir)\libthai-0.dll" />
+            </Component>
+            <Component Id="LibUnistring">
+                <File Id="LibUnistring" Source="$(var.TesseractDir)\libunistring-5.dll" />
+            </Component>
+            <Component Id="LibFfi">
+                <File Id="LibFfi" Source="$(var.TesseractDir)\libffi-8.dll" />
+            </Component>
+
+            <!-- Resources folder -->
+            <Component Id="ConfigUI">
+                <File Id="ConfigUI" Source="$(var.SourceDir)\resources\config_ui.html" />
+            </Component>
+
+            <!-- Tessdata files (OCR language packs) -->
+            <Component Id="TessdataEng" Directory="TessdataFolder">
+                <File Id="TessdataEng" Source="$(var.TesseractDir)\tessdata\eng.traineddata" />
+            </Component>
+            <Component Id="TessdataOsd" Directory="TessdataFolder">
+                <File Id="TessdataOsd" Source="$(var.TesseractDir)\tessdata\osd.traineddata" />
+            </Component>
+            <!-- Chinese Simplified -->
+            <Component Id="TessdataChiSim" Directory="TessdataFolder">
+                <File Id="TessdataChiSim" Source="$(var.TesseractDir)\tessdata\chi_sim.traineddata" />
+            </Component>
+            <Component Id="TessdataChiSimVert" Directory="TessdataFolder">
+                <File Id="TessdataChiSimVert" Source="$(var.TesseractDir)\tessdata\chi_sim_vert.traineddata" />
+            </Component>
+            <!-- Chinese Traditional -->
+            <Component Id="TessdataChiTra" Directory="TessdataFolder">
+                <File Id="TessdataChiTra" Source="$(var.TesseractDir)\tessdata\chi_tra.traineddata" />
+            </Component>
+            <Component Id="TessdataChiTraVert" Directory="TessdataFolder">
+                <File Id="TessdataChiTraVert" Source="$(var.TesseractDir)\tessdata\chi_tra_vert.traineddata" />
+            </Component>
+        </ComponentGroup>
+
+        <!-- Start Menu Shortcut -->
+        <Component Id="ApplicationShortcut" Directory="ApplicationProgramsFolder">
+            <Shortcut Id="ApplicationStartMenuShortcut"
+                      Name="PowerCapslock"
+                      Description="Keyboard Hotkey Mapping Tool"
+                      Target="[INSTALLFOLDER]powercapslock.exe"
+                      WorkingDirectory="INSTALLFOLDER" />
+            <RemoveFolder Id="CleanUpShortCut" Directory="ApplicationProgramsFolder" On="uninstall" />
+            <RegistryValue Root="HKCU" Key="Software\PowerCapslock" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+        </Component>
+
+        <!-- Desktop Shortcut -->
+        <Component Id="DesktopShortcut" Directory="DesktopFolder">
+            <Shortcut Id="DesktopShortcut"
+                      Name="PowerCapslock"
+                      Description="Keyboard Hotkey Mapping Tool"
+                      Target="[INSTALLFOLDER]powercapslock.exe"
+                      WorkingDirectory="INSTALLFOLDER" />
+            <RegistryValue Root="HKCU" Key="Software\PowerCapslock" Name="desktop" Type="integer" Value="1" KeyPath="yes" />
+        </Component>
+    </Package>
+</Wix>

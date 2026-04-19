@@ -4,6 +4,11 @@
 #include <string.h>
 #include <process.h>
 
+#ifdef USE_TESSERACT
+/* Forward declaration for Tesseract backend */
+OCRResults* OCRRecognizeTesseract(const ScreenshotImage* image);
+#endif
+
 #define MODULE_NAME "OCR"
 
 static BOOL g_ocrInitialized = FALSE;
@@ -17,6 +22,7 @@ static volatile DWORD g_currentSessionId = 0;
 typedef struct {
     ScreenshotImage* image;
     DWORD sessionId;
+    DWORD clientSessionId;
     HWND hwnd;
     UINT msg;
 } WorkerArgs;
@@ -26,7 +32,15 @@ static unsigned __stdcall OcrWorkerThread(void* arg);
 
 BOOL OCRInit(void) {
     LOG_DEBUG("[%s] 开始初始化...", MODULE_NAME);
-    LOG_INFO("[%s] 模块初始化成功 (Tesseract 待集成)", MODULE_NAME);
+
+#ifdef USE_TESSERACT
+    if (!OCRInitTesseract(NULL)) {
+        LOG_WARN("[%s] Tesseract 初始化失败，使用 Mock OCR", MODULE_NAME);
+    }
+#else
+    LOG_INFO("[%s] 模块初始化成功 (Mock OCR)", MODULE_NAME);
+#endif
+
     g_ocrInitialized = TRUE;
     return TRUE;
 }
@@ -34,11 +48,16 @@ BOOL OCRInit(void) {
 void OCRCleanup(void) {
     LOG_DEBUG("[%s] 开始清理...", MODULE_NAME);
     OCRCancelAsync();
+
+#ifdef USE_TESSERACT
+    OCRCleanupTesseract();
+#endif
+
     g_ocrInitialized = FALSE;
     LOG_INFO("[%s] 模块已清理", MODULE_NAME);
 }
 
-BOOL OCRRecognizeAsync(const ScreenshotImage* image, HWND hwnd, UINT msg) {
+BOOL OCRRecognizeAsync(const ScreenshotImage* image, HWND hwnd, UINT msg, DWORD clientSessionId) {
     if (!g_ocrInitialized || image == NULL || hwnd == NULL) {
         LOG_ERROR("[%s] 异步识别失败: 参数无效", MODULE_NAME);
         return FALSE;
@@ -70,6 +89,7 @@ BOOL OCRRecognizeAsync(const ScreenshotImage* image, HWND hwnd, UINT msg) {
 
     args->image = imageCopy;
     args->sessionId = sessionId;
+    args->clientSessionId = clientSessionId;
     args->hwnd = hwnd;
     args->msg = msg;
 
@@ -96,6 +116,7 @@ static unsigned __stdcall OcrWorkerThread(void* arg) {
     WorkerArgs* args = (WorkerArgs*)arg;
     ScreenshotImage* image = args->image;
     DWORD sessionId = args->sessionId;
+    DWORD clientSessionId = args->clientSessionId;
     HWND hwnd = args->hwnd;
     UINT msg = args->msg;
     free(args);
@@ -109,6 +130,7 @@ static unsigned __stdcall OcrWorkerThread(void* arg) {
         return 0;
     }
 
+    LOG_DEBUG("[%s] Worker 线程执行识别, sessionId=%lu", MODULE_NAME, sessionId);
     // 执行识别（mock 延迟模拟真实 OCR）
     Sleep(500);
 
@@ -118,12 +140,20 @@ static unsigned __stdcall OcrWorkerThread(void* arg) {
         return 0;
     }
 
+    int imageWidth = image->width;
+    int imageHeight = image->height;
     OCRResults* results = OCRRecognize(image);
     ScreenshotImageFree(image);
 
     if (results == NULL) {
-        LOG_ERROR("[%s] Worker 识别失败, sessionId=%lu", MODULE_NAME, sessionId);
-        return 0;
+        results = (OCRResults*)calloc(1, sizeof(OCRResults));
+        if (results == NULL) {
+            LOG_ERROR("[%s] Worker 识别失败且无法分配空结果, sessionId=%lu", MODULE_NAME, sessionId);
+            return 0;
+        }
+        results->imageWidth = imageWidth;
+        results->imageHeight = imageHeight;
+        LOG_WARN("[%s] Worker 未识别到文本，发送空 OCR 结果, sessionId=%lu", MODULE_NAME, sessionId);
     }
 
     // 验证 session 仍然有效
@@ -141,13 +171,17 @@ static unsigned __stdcall OcrWorkerThread(void* arg) {
         return 0;
     }
 
-    msgData->sessionId = sessionId;
+    msgData->sessionId = clientSessionId;
     msgData->results = results;
 
-    LOG_INFO("[%s] Worker 识别完成, 发送消息, sessionId=%lu, wordCount=%d",
-             MODULE_NAME, sessionId, results->wordCount);
+    LOG_INFO("[%s] Worker 识别完成, 发送消息, sessionId=%lu, clientSessionId=%lu, wordCount=%d",
+             MODULE_NAME, sessionId, clientSessionId, results->wordCount);
 
-    PostMessage(hwnd, msg, 0, (LPARAM)msgData);
+    if (!PostMessage(hwnd, msg, 0, (LPARAM)msgData)) {
+        LOG_WARN("[%s] 发送 OCR 完成消息失败, hwnd=%p, error=%lu", MODULE_NAME, hwnd, GetLastError());
+        OCRFreeResults(results);
+        free(msgData);
+    }
 
     return 0;
 }
@@ -162,120 +196,30 @@ OCRResults* OCRRecognize(const ScreenshotImage* image) {
 
     LOG_DEBUG("[%s] 开始识别: %dx%d", MODULE_NAME, image->width, image->height);
 
-    results = (OCRResults*)malloc(sizeof(OCRResults));
-    if (results == NULL) {
-        LOG_ERROR("[%s] 分配结果内存失败", MODULE_NAME);
-        return NULL;
+#ifdef USE_TESSERACT
+    /* 使用 Tesseract OCR */
+    LOG_DEBUG("[%s] 调用 OCRRecognizeTesseract...", MODULE_NAME);
+    results = OCRRecognizeTesseract(image);
+    LOG_DEBUG("[%s] OCRRecognizeTesseract 返回, results=%p", MODULE_NAME, results);
+    if (results != NULL && results->wordCount > 0) {
+        LOG_INFO("[%s] Tesseract 识别完成: %d words", MODULE_NAME, results->wordCount);
+        return results;
     }
-
-    memset(results, 0, sizeof(OCRResults));
-    results->imageWidth = image->width;
-    results->imageHeight = image->height;
-
-    /* Mock OCR data - 3 lines of text for testing selection UI */
-    results->wordCount = 12;
-    results->words = (OCRWord*)malloc(results->wordCount * sizeof(OCRWord));
-    if (results->words == NULL) {
-        free(results);
-        LOG_ERROR("[%s] 分配词数组内存失败", MODULE_NAME);
-        return NULL;
+    LOG_WARN("[%s] Tesseract 识别失败或无结果", MODULE_NAME);
+    /* 清理 Tesseract 结果 */
+    if (results != NULL) {
+        OCRFreeResults(results);
+        results = NULL;
     }
+#else
+    results = NULL;
+#endif
 
-    /* Line 1: "Hello World" */
-    results->words[0].text = strdup("Hello");
-    results->words[0].boundingBox = (RECT){50, 50, 120, 76};
-    results->words[0].confidence = 0.95f;
-    results->words[0].isLineBreak = FALSE;
-
-    results->words[1].text = strdup("World");
-    results->words[1].boundingBox = (RECT){130, 50, 200, 76};
-    results->words[1].confidence = 0.92f;
-    results->words[1].isLineBreak = TRUE;
-
-    /* Line 2: "OCR Selection Test" */
-    results->words[2].text = strdup("OCR");
-    results->words[2].boundingBox = (RECT){50, 86, 100, 112};
-    results->words[2].confidence = 0.90f;
-    results->words[2].isLineBreak = FALSE;
-
-    results->words[3].text = strdup("Selection");
-    results->words[3].boundingBox = (RECT){110, 86, 200, 112};
-    results->words[3].confidence = 0.88f;
-    results->words[3].isLineBreak = FALSE;
-
-    results->words[4].text = strdup("Test");
-    results->words[4].boundingBox = (RECT){210, 86, 260, 112};
-    results->words[4].confidence = 0.93f;
-    results->words[4].isLineBreak = TRUE;
-
-    /* Line 3: "PowerCapslock" */
-    results->words[5].text = strdup("Power");
-    results->words[5].boundingBox = (RECT){50, 122, 130, 148};
-    results->words[5].confidence = 0.91f;
-    results->words[5].isLineBreak = FALSE;
-
-    results->words[6].text = strdup("Capslock");
-    results->words[6].boundingBox = (RECT){140, 122, 240, 148};
-    results->words[6].confidence = 0.89f;
-    results->words[6].isLineBreak = TRUE;
-
-    /* Extra words for testing selection range */
-    results->words[7].text = strdup("Select");
-    results->words[7].boundingBox = (RECT){50, 158, 120, 184};
-    results->words[7].confidence = 0.87f;
-    results->words[7].isLineBreak = FALSE;
-
-    results->words[8].text = strdup("multiple");
-    results->words[8].boundingBox = (RECT){130, 158, 220, 184};
-    results->words[8].confidence = 0.85f;
-    results->words[8].isLineBreak = FALSE;
-
-    results->words[9].text = strdup("words");
-    results->words[9].boundingBox = (RECT){230, 158, 290, 184};
-    results->words[9].confidence = 0.83f;
-    results->words[9].isLineBreak = TRUE;
-
-    results->words[10].text = strdup("Copy");
-    results->words[10].boundingBox = (RECT){50, 194, 110, 220};
-    results->words[10].confidence = 0.91f;
-    results->words[10].isLineBreak = FALSE;
-
-    results->words[11].text = strdup("text");
-    results->words[11].boundingBox = (RECT){120, 194, 170, 220};
-    results->words[11].confidence = 0.90f;
-    results->words[11].isLineBreak = TRUE;
-
-    /* Build fullText from words */
-    {
-        size_t len = 0;
-        int i;
-        for (i = 0; i < results->wordCount; i++) {
-            len += strlen(results->words[i].text);
-            if (results->words[i].isLineBreak) {
-                len += 2; /* \r\n */
-            } else if (i < results->wordCount - 1) {
-                len += 1; /* space */
-            }
-        }
-        results->fullText = (char*)malloc(len + 1);
-        if (results->fullText) {
-            char* p = results->fullText;
-            for (i = 0; i < results->wordCount; i++) {
-                strcpy(p, results->words[i].text);
-                p += strlen(results->words[i].text);
-                if (results->words[i].isLineBreak) {
-                    *p++ = '\r';
-                    *p++ = '\n';
-                } else if (i < results->wordCount - 1) {
-                    *p++ = ' ';
-                }
-            }
-            *p = '\0';
-        }
-    }
-
-    LOG_INFO("[%s] 识别完成, wordCount=%d", MODULE_NAME, results->wordCount);
-    return results;
+    /* 如果 Tesseract 未启用或未识别到文字，返回 NULL
+     * UI 会显示"未识别到文字"提示用户
+     */
+    LOG_INFO("[%s] 未识别到文字或 OCR 不可用", MODULE_NAME);
+    return NULL;
 }
 
 void OCRFreeResults(OCRResults* results) {

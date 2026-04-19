@@ -10,7 +10,6 @@ typedef enum {
     TOOLBAR_BTN_NONE = 0,
     TOOLBAR_BTN_SAVE,       // 保存
     TOOLBAR_BTN_COPY,       // 复制
-    TOOLBAR_BTN_PIN,        // 置顶
     TOOLBAR_BTN_RECT,       // 矩形标注
     TOOLBAR_BTN_ARROW,      // 箭头标注
     TOOLBAR_BTN_PENCIL,     // 铅笔

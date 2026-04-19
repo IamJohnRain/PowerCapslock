@@ -69,6 +69,7 @@ typedef struct {
     bool isDrawingAnnotation;
     bool isEditingText;
     bool isResizingSelection;
+    bool isMovingSelection;
     bool isSelectingText;
     COLORREF currentAnnotationColor;
     int currentLineWidth;
@@ -78,6 +79,8 @@ typedef struct {
     OverlayResizeHandle hoverResizeHandle;
     ScreenshotRect resizeStartSelection;
     POINT resizeStartPoint;
+    ScreenshotRect moveStartSelection;
+    POINT moveStartPoint;
     POINT textAnchor;
     WCHAR editingText[OVERLAY_TEXT_MAX];
     int editingTextLen;

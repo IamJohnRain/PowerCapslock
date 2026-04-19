@@ -45,21 +45,6 @@ static void OnToolbarButton(ToolbarButtonType button, void* userData) {
             }
             break;
 
-        case TOOLBAR_BTN_PIN:
-            image = GetSelectionImageForAction();
-            if (image != NULL) {
-                const ScreenshotRect* selection = ScreenshotOverlayGetSelection();
-                screenSelection = SelectionToScreenRect(selection);
-                ScreenshotToolbarHide();
-                ScreenshotOverlayHide();
-                g_active = false;
-                if (!ScreenshotFloatShow(image, screenSelection.x, screenSelection.y)) {
-                    LOG_ERROR("[%s] Failed to pin screenshot float window", MODULE_NAME);
-                }
-                ScreenshotImageFree(image);
-            }
-            break;
-
         case TOOLBAR_BTN_SAVE:
             image = GetSelectionImageForAction();
             if (image != NULL) {
@@ -75,17 +60,36 @@ static void OnToolbarButton(ToolbarButtonType button, void* userData) {
 
         case TOOLBAR_BTN_OCR:
             // OCR 使用原始选区图像（不带标注），避免标注干扰识别
+            LOG_DEBUG("[%s] OCR 按钮被点击", MODULE_NAME);
             image = ScreenshotOverlayGetSelectionImage();
             if (image != NULL) {
+                LOG_DEBUG("[%s] 获取选区图像成功: %dx%d", MODULE_NAME, image->width, image->height);
                 const ScreenshotRect* selection = ScreenshotOverlayGetSelection();
                 screenSelection = SelectionToScreenRect(selection);
+                LOG_DEBUG("[%s] 选区坐标: (%d,%d) %dx%d", MODULE_NAME,
+                          screenSelection.x, screenSelection.y,
+                          screenSelection.width, screenSelection.height);
                 ScreenshotToolbarHide();
+                LOG_DEBUG("[%s] 工具栏已隐藏", MODULE_NAME);
                 ScreenshotOverlayHide();
+                LOG_DEBUG("[%s] 选区窗口已隐藏", MODULE_NAME);
                 g_active = false;
+                LOG_DEBUG("[%s] 调用 ScreenshotFloatShowOcr...", MODULE_NAME);
                 if (!ScreenshotFloatShowOcr(image, screenSelection.x, screenSelection.y)) {
                     LOG_ERROR("[%s] Failed to show OCR float window", MODULE_NAME);
                 }
+                LOG_DEBUG("[%s] ScreenshotFloatShowOcr 返回", MODULE_NAME);
                 ScreenshotImageFree(image);
+                LOG_DEBUG("[%s] 图像已释放", MODULE_NAME);
+            } else {
+                const ScreenshotRect* selection = ScreenshotOverlayGetSelection();
+                if (selection != NULL) {
+                    LOG_ERROR("[%s] Failed to get OCR selection image: (%d, %d) %dx%d",
+                              MODULE_NAME, selection->x, selection->y,
+                              selection->width, selection->height);
+                } else {
+                    LOG_ERROR("[%s] Failed to get OCR selection image: no active selection", MODULE_NAME);
+                }
             }
             break;
 
