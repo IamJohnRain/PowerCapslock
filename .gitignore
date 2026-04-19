@@ -56,3 +56,4 @@ test/ocr_selection_*/
 test/*_output/
 .worktrees/
 .dist/
+dist/
