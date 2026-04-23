@@ -36,6 +36,7 @@ static POINT WindowToImagePoint(FloatWindowContext* ctx, POINT windowPoint);
 static RECT ImageToWindowRect(FloatWindowContext* ctx, RECT imageRect);
 static int FindWordAtImagePoint(FloatWindowContext* ctx, POINT imagePoint);
 static int FindNearestWordAtImagePoint(FloatWindowContext* ctx, POINT imagePoint);
+static int ResolveSelectionStartWordAtImagePoint(FloatWindowContext* ctx, POINT imagePoint);
 static int ResolveSelectionWordAtImagePoint(FloatWindowContext* ctx, POINT imagePoint);
 static void DrawOcrOverlays(HDC hdc, FloatWindowContext* ctx);
 static void DrawWordHighlight(HDC hdc, FloatWindowContext* ctx, int wordIndex, COLORREF color, BYTE alpha);
@@ -87,6 +88,11 @@ void ScreenshotFloatCleanup(void) {
     LOG_DEBUG("[浮动窗口] 开始清理...");
 
     if (g_float.hwnd != NULL) {
+        if (g_float.ocrInProgress) {
+            OCRCancelAsync();
+            g_float.ocrSessionId++;
+            g_float.ocrInProgress = false;
+        }
         DestroyWindow(g_float.hwnd);
         g_float.hwnd = NULL;
     }
@@ -104,6 +110,98 @@ void ScreenshotFloatCleanup(void) {
     memset(&g_float, 0, sizeof(FloatWindowContext));
     g_initialized = false;
     LOG_INFO("[浮动窗口] 模块已清理");
+}
+
+bool ScreenshotFloatShow(const ScreenshotImage* image, int x, int y) {
+    if (!g_initialized) {
+        LOG_ERROR("[浮动窗口] 模块未初始化");
+        return false;
+    }
+
+    if (image == NULL) {
+        LOG_ERROR("[浮动窗口] 图像为空");
+        return false;
+    }
+
+    LOG_DEBUG("[浮动窗口] 显示浮动窗口...");
+
+    if (g_float.hwnd != NULL) {
+        if (g_float.ocrInProgress) {
+            OCRCancelAsync();
+            g_float.ocrSessionId++;
+            g_float.ocrInProgress = false;
+        }
+        DestroyWindow(g_float.hwnd);
+        g_float.hwnd = NULL;
+    }
+
+    if (g_float.image != NULL) {
+        ScreenshotImageFree(g_float.image);
+        g_float.image = NULL;
+    }
+    if (g_float.ocrResults != NULL) {
+        OCRFreeResults(g_float.ocrResults);
+        g_float.ocrResults = NULL;
+    }
+
+    g_float.image = ScreenshotImageDup(image);
+    if (g_float.image == NULL) {
+        LOG_ERROR("[浮动窗口] 复制图像失败");
+        return false;
+    }
+
+    g_float.ocrMode = false;
+    g_float.ocrInProgress = false;
+    g_float.hoveredWordIndex = -1;
+    g_float.anchorWordIndex = -1;
+    g_float.activeWordIndex = -1;
+    g_float.isSelectingText = false;
+    g_float.isDragging = false;
+    g_float.imageScale = 0.0f;
+    g_float.imageOffset.x = 0;
+    g_float.imageOffset.y = 0;
+    g_float.imageDrawSize.cx = 0;
+    g_float.imageDrawSize.cy = 0;
+    g_float.showCopiedToast = false;
+
+    int width, height;
+    CalculateWindowSize(&g_float, &width, &height);
+
+    if (x == -1 && y == -1) {
+        int screenWidth = GetSystemMetrics(SM_CXSCREEN);
+        int screenHeight = GetSystemMetrics(SM_CYSCREEN);
+        x = screenWidth - width - 20;
+        y = screenHeight - height - 60;
+    } else {
+        ClampWindowToVirtualScreen(&x, &y, width, height);
+    }
+
+    g_float.hwnd = CreateWindowExA(
+        WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED,
+        WINDOW_CLASS,
+        "ScreenshotFloat",
+        WS_POPUP,
+        x, y, width, height,
+        NULL, NULL, GetModuleHandle(NULL), NULL);
+
+    if (g_float.hwnd == NULL) {
+        LOG_ERROR("[浮动窗口] 创建窗口失败: %d", GetLastError());
+        ScreenshotImageFree(g_float.image);
+        g_float.image = NULL;
+        return false;
+    }
+
+    HRGN region = CreateRoundRectRgn(0, 0, width + 1, height + 1, 8, 8);
+    SetWindowRgn(g_float.hwnd, region, TRUE);
+
+    BYTE alpha = (BYTE)(g_float.opacity * 255);
+    SetLayeredWindowAttributes(g_float.hwnd, 0, alpha, LWA_ALPHA);
+
+    ShowWindow(g_float.hwnd, SW_SHOWNOACTIVATE);
+    UpdateWindow(g_float.hwnd);
+
+    LOG_INFO("[浮动窗口] 窗口已显示: (%d, %d) %dx%d", x, y, width, height);
+    return true;
 }
 
 bool ScreenshotFloatShowOcr(const ScreenshotImage* image, int x, int y) {
@@ -400,17 +498,8 @@ static void CalculateImageLayout(FloatWindowContext* ctx, RECT clientRect) {
     ctx->imageDrawSize.cx = (int)(imgWidth * ctx->imageScale);
     ctx->imageDrawSize.cy = (int)(imgHeight * ctx->imageScale);
 
-    // 非 OCR 模式：图像靠左上方，阴影区域在右边和下方
-    // OCR 模式：图像居中
-    if (!ctx->ocrMode) {
-        // 图像靠左上方，偏移量要容纳阴影（根据缩放比例计算）
-        ctx->imageOffset.x = 16;  // 左侧阴影宽度
-        ctx->imageOffset.y = (int)(16 / ctx->imageScale);  // 顶部阴影高度（按比例）
-    } else {
-        // 居中偏移
-        ctx->imageOffset.x = (winWidth - ctx->imageDrawSize.cx) / 2;
-        ctx->imageOffset.y = (winHeight - ctx->imageDrawSize.cy) / 2;
-    }
+    ctx->imageOffset.x = (winWidth - ctx->imageDrawSize.cx) / 2;
+    ctx->imageOffset.y = (winHeight - ctx->imageDrawSize.cy) / 2;
 
     LOG_DEBUG("[浮动窗口] CalculateImageLayout: win=%dx%d, img=%dx%d, scale=%.4f, offset=(%d,%d), drawSize=(%d,%d)",
               winWidth, winHeight, imgWidth, imgHeight, ctx->imageScale,
@@ -532,6 +621,25 @@ static int FindNearestWordAtImagePoint(FloatWindowContext* ctx, POINT imagePoint
     return bestDistanceSq <= maxDistance * maxDistance ? bestIndex : -1;
 }
 
+static int ResolveSelectionStartWordAtImagePoint(FloatWindowContext* ctx, POINT imagePoint) {
+    int wordIdx;
+
+    if (ctx == NULL || ctx->ocrResults == NULL || ctx->ocrResults->words == NULL) {
+        return -1;
+    }
+
+    wordIdx = FindWordAtImagePoint(ctx, imagePoint);
+    if (wordIdx >= 0) {
+        return wordIdx;
+    }
+
+    if (ctx->hoveredWordIndex >= 0 && ctx->hoveredWordIndex < ctx->ocrResults->wordCount) {
+        return ctx->hoveredWordIndex;
+    }
+
+    return FindNearestWordAtImagePoint(ctx, imagePoint);
+}
+
 static int ResolveSelectionWordAtImagePoint(FloatWindowContext* ctx, POINT imagePoint) {
     int wordIdx = FindWordAtImagePoint(ctx, imagePoint);
     if (wordIdx >= 0) {
@@ -572,8 +680,8 @@ static void DrawFloatWindow(HDC hdc, FloatWindowContext* ctx) {
     FillRect(hdcMem, &clientRect, hBgBrush);
     DeleteObject(hBgBrush);
 
-    // 绘制左上角阴影（悬浮效果）
-    if (!ctx->ocrMode) {
+    // Shadow drawing is disabled to keep pinned screenshots pixel-aligned.
+    if (false) {
         // 创建阴影位图
         int shadowSize = 16;
         HDC hdcShadow = CreateCompatibleDC(hdc);
@@ -675,6 +783,10 @@ static void DrawOcrOverlays(HDC hdc, FloatWindowContext* ctx) {
     }
 
     int selStart = -1, selEnd = -1;
+    COLORREF selectedColor = RGB(153, 204, 255);
+    COLORREF hoverColor = RGB(232, 243, 255);
+    BYTE selectedAlpha = ctx->isSelectingText ? 140 : 120;
+    BYTE hoverAlpha = ctx->isSelectingText ? 28 : 40;
 
     // 绘制选择高亮
     if (HasTextSelection(ctx)) {
@@ -682,7 +794,7 @@ static void DrawOcrOverlays(HDC hdc, FloatWindowContext* ctx) {
         int i;
         for (i = selStart; i <= selEnd; i++) {
             if (i >= 0 && i < ctx->ocrResults->wordCount) {
-                DrawWordHighlight(hdc, ctx, i, RGB(220, 240, 255), 32);
+                DrawWordHighlight(hdc, ctx, i, selectedColor, selectedAlpha);
             }
         }
     }
@@ -690,7 +802,7 @@ static void DrawOcrOverlays(HDC hdc, FloatWindowContext* ctx) {
     // 绘制 hover 高亮
     if (ctx->hoveredWordIndex >= 0 && ctx->hoveredWordIndex < ctx->ocrResults->wordCount) {
         if (!HasTextSelection(ctx) || ctx->hoveredWordIndex < selStart || ctx->hoveredWordIndex > selEnd) {
-            DrawWordHighlight(hdc, ctx, ctx->hoveredWordIndex, RGB(235, 248, 255), 20);
+            DrawWordHighlight(hdc, ctx, ctx->hoveredWordIndex, hoverColor, hoverAlpha);
         }
     }
 }
@@ -701,6 +813,23 @@ static void DrawWordHighlight(HDC hdc, FloatWindowContext* ctx, int wordIndex, C
     }
 
     RECT fillRect = ImageToWindowRect(ctx, ctx->ocrResults->words[wordIndex].boundingBox);
+    RECT clientRect;
+    int padX = ctx->isSelectingText ? 4 : 3;
+    int padY = ctx->isSelectingText ? 3 : 2;
+
+    fillRect.left -= padX;
+    fillRect.right += padX;
+    fillRect.top -= padY;
+    fillRect.bottom += padY;
+
+    if (ctx->hwnd != NULL) {
+        GetClientRect(ctx->hwnd, &clientRect);
+        if (fillRect.left < 0) fillRect.left = 0;
+        if (fillRect.top < 0) fillRect.top = 0;
+        if (fillRect.right > clientRect.right) fillRect.right = clientRect.right;
+        if (fillRect.bottom > clientRect.bottom) fillRect.bottom = clientRect.bottom;
+    }
+
     int fillWidth = fillRect.right - fillRect.left;
     int fillHeight = fillRect.bottom - fillRect.top;
     if (fillWidth <= 0 || fillHeight <= 0) {
@@ -1072,13 +1201,7 @@ static LRESULT CALLBACK FloatWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
             SetFocus(hwnd);
 
             // OCR 模式下尝试选择文字
-            if (g_float.ocrMode) {
-                // OCR 模式：如果结果还没返回，不允许拖动窗口
-                if (g_float.ocrResults == NULL) {
-                    LOG_DEBUG("[浮动窗口] OCR 还在进行中，不允许操作");
-                    return 0;  // 忽略点击
-                }
-
+            if (g_float.ocrMode && g_float.ocrResults != NULL) {
                 LOG_DEBUG("[浮动窗口] WM_LBUTTONDOWN: ocrMode=%d, ocrResults=%p, wordCount=%d",
                          g_float.ocrMode, g_float.ocrResults, g_float.ocrResults->wordCount);
                 LOG_DEBUG("[浮动窗口] 点击坐标: (%d, %d)", pt.x, pt.y);
@@ -1089,8 +1212,8 @@ static LRESULT CALLBACK FloatWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
                 POINT imagePt = WindowToImagePoint(&g_float, pt);
                 LOG_DEBUG("[浮动窗口] 图像坐标: (%d, %d)", imagePt.x, imagePt.y);
 
-                int wordIdx = FindWordAtImagePoint(&g_float, imagePt);
-                LOG_DEBUG("[浮动窗口] FindWordAtImagePoint 返回: %d", wordIdx);
+                int wordIdx = ResolveSelectionStartWordAtImagePoint(&g_float, imagePt);
+                LOG_DEBUG("[浮动窗口] ResolveSelectionStartWordAtImagePoint 返回: %d", wordIdx);
 
                 if (wordIdx >= 0) {
                     // 开始文字选择
@@ -1102,11 +1225,14 @@ static LRESULT CALLBACK FloatWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
                     InvalidateRect(hwnd, NULL, FALSE);
                     return 0;
                 }
-                // 点击了非文字区域，忽略
+                g_float.isDragging = true;
+                g_float.dragStart.x = pt.x;
+                g_float.dragStart.y = pt.y;
+                SetCapture(hwnd);
                 return 0;
             }
 
-            // 非 OCR 模式：允许拖动窗口
+            // 非 OCR 模式或 OCR 结果尚未返回：允许拖动窗口
             g_float.isDragging = true;
             g_float.dragStart.x = pt.x;
             g_float.dragStart.y = pt.y;
@@ -1321,8 +1447,8 @@ int ScreenshotFloatTest(void) {
         return 1;
     }
 
-    // 显示浮动窗口（OCR 模式）
-    if (!ScreenshotFloatShowOcr(image, -1, -1)) {
+    // 显示普通浮动窗口
+    if (!ScreenshotFloatShow(image, -1, -1)) {
         LOG_ERROR("[浮动窗口测试] 显示浮动窗口失败");
         ScreenshotImageFree(image);
         ScreenshotCleanup();

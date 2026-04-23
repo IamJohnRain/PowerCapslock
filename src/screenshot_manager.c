@@ -45,6 +45,21 @@ static void OnToolbarButton(ToolbarButtonType button, void* userData) {
             }
             break;
 
+        case TOOLBAR_BTN_PIN:
+            image = GetSelectionImageForAction();
+            if (image != NULL) {
+                const ScreenshotRect* selection = ScreenshotOverlayGetSelection();
+                screenSelection = SelectionToScreenRect(selection);
+                ScreenshotToolbarHide();
+                ScreenshotOverlayHide();
+                g_active = false;
+                if (!ScreenshotFloatShow(image, screenSelection.x, screenSelection.y)) {
+                    LOG_ERROR("[%s] Failed to pin screenshot float window", MODULE_NAME);
+                }
+                ScreenshotImageFree(image);
+            }
+            break;
+
         case TOOLBAR_BTN_SAVE:
             image = GetSelectionImageForAction();
             if (image != NULL) {

@@ -43,6 +43,8 @@ bool ScreenshotFloatInit(void);
 // 清理浮动窗口模块
 void ScreenshotFloatCleanup(void);
 
+bool ScreenshotFloatShow(const ScreenshotImage* image, int x, int y);
+
 // 显示浮动窗口（OCR 模式）
 // image: 要显示的图像（会复制一份）
 // x, y: 初始位置（-1 表示自动定位）
